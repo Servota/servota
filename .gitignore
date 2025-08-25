@@ -1,0 +1,11 @@
+node_modules/
+.pnpm-store/
+dist/
+build/
+.expo/
+.env*
+.DS_Store
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+supabase/.temp/

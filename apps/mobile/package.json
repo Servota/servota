@@ -1,0 +1,10 @@
+{
+  "name": "@servota/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "echo \"Expo setup arrives in Phase 5\"",
+    "build": "node -e \"console.log('mobile build deferred to Phase 5')\"",
+    "typecheck": "echo \"(mobile typecheck added in Phase 5)\""
+  }
+}

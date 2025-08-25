@@ -1,0 +1,19 @@
+{
+  "name": "servota",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.7.0",
+  "engines": { "node": ">=20.0.0" },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "supabase"
+  ],
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "dev:web": "pnpm --filter @servota/web dev",
+    "dev:mobile": "pnpm --filter @servota/mobile start"
+  }
+}
