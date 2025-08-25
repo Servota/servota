@@ -9,7 +9,7 @@
 Note: 0.4 Defered for later, will setup GitHub Now but defer Apple Developer Program (iOS), Google Play Console (Android) & Microsoft Partner Center (Windows Store for PWA).
 
 ### Phase 1 — Repo, tooling, and CI
-- [ ] [1.1 Create a monorepo with workspaces](#11-create-a-monorepo-with-workspaces)
+- [x] [1.1 Create a monorepo with workspaces](#11-create-a-monorepo-with-workspaces)
 - [ ] [1.2 Add TypeScript, ESLint, Prettier, and pre-commit hooks](#12-add-typescript-eslint-prettier-and-pre-commit-hooks)
 - [ ] [1.3 Set up environment files](#13-set-up-environment-files)
 - [ ] [1.4 Add CI (GitHub Actions) for install/lint/typecheck](#14-add-ci-github-actions-for-installlinttypecheck)
