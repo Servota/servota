@@ -17,7 +17,7 @@ _Last updated: 26 Aug 2025_
 
 - [x] [1.1 Create a monorepo with workspaces](#11-create-a-monorepo-with-workspaces)
 - [x] [1.2 Add TypeScript, ESLint, Prettier, and pre-commit hooks](#12-add-typescript-eslint-prettier-and-pre-commit-hooks)
-- [ ] [1.3 Set up environment files](#13-set-up-environment-files)
+- [x] [1.3 Set up environment files](#13-set-up-environment-files)
 - [ ] [1.4 Add CI (GitHub Actions) for install/lint/typecheck](#14-add-ci-github-actions-for-installlinttypecheck)
 
 ### Phase 2 — Supabase projects & database
