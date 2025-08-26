@@ -1,12 +1,15 @@
 # Roster App — Step-by-Step Plan (Servota)
+_Last updated: 26 Aug 2025_
+
+## Status
 
 ### Phase 0 — Foundations
 - [x] [0.1 Pick a working name & domain](#01-pick-a-working-name--domain)
 - [x] [0.2 Write audience & promise (1 paragraph + 3 bullets)](#02-write-audience--promise-1-paragraph--3-bullets)
 - [x] [0.3 Write privacy & data-retention basics (1 page) + support email](#03-write-privacy--data-retention-basics-1-page--support-email)
-- [ ] [0.4 Set up developer accounts (Apple, Google Play, Expo/EAS, GitHub, Microsoft Partner Center)](#04-set-up-developer-accounts-apple-google-play-expoeas-github-microsoft-partner-center)
+- [x] [0.4 Developer accounts (NOW: GitHub Org; LATER: app stores)](#04-developer-accounts-now-github-org-later-app-stores)
 
-Note: 0.4 Defered for later, will setup GitHub Now but defer Apple Developer Program (iOS), Google Play Console (Android) & Microsoft Partner Center (Windows Store for PWA).
+> Note: Apple/Google/Microsoft store accounts are deferred to avoid fees until builds are ready.
 
 ### Phase 1 — Repo, tooling, and CI
 - [x] [1.1 Create a monorepo with workspaces](#11-create-a-monorepo-with-workspaces)
@@ -18,6 +21,7 @@ Note: 0.4 Defered for later, will setup GitHub Now but defer Apple Developer Pro
 - [ ] [2.1 Create Supabase projects: dev, staging, prod](#21-create-supabase-projects-dev-staging-prod)
 - [ ] [2.2 Install Supabase CLI and link “dev”](#22-install-supabase-cli-and-link-dev)
 - [ ] [2.3 Write v1 database schema (tables)](#23-write-v1-database-schema-tables)
+- [ ] [2.3a Add auto-scheduling tables (V1.1)](#23a-add-auto-scheduling-tables-v11)
 - [ ] [2.4 Add seed data](#24-add-seed-data)
 - [ ] [2.5 Turn on Row Level Security (RLS) and add policies](#25-turn-on-row-level-security-rls-and-add-policies)
 - [ ] [2.6 Test RLS with simple automated checks](#26-test-rls-with-simple-automated-checks)
@@ -26,6 +30,7 @@ Note: 0.4 Defered for later, will setup GitHub Now but defer Apple Developer Pro
 - [ ] [3.1 Replacement claim function (first-come-first-served)](#31-replacement-claim-function-first-come-first-served)
 - [ ] [3.2 Subscription webhook (Stripe or Paddle)](#32-subscription-webhook-stripe-or-paddle)
 - [ ] [3.3 Notification sender (push/email queue)](#33-notification-sender-pushemail-queue)
+- [ ] [3.4 Auto-scheduler Edge Function (preview/apply/undo)](#34-auto-scheduler-edge-function-previewapplyundo)
 
 ### Phase 4 — Shared client core
 - [ ] [4.1 Generate TypeScript types from the database](#41-generate-typescript-types-from-the-database)
@@ -46,6 +51,7 @@ Note: 0.4 Defered for later, will setup GitHub Now but defer Apple Developer Pro
 - [ ] [6.2 Add sign-in & account switcher (reuse shared client)](#62-add-sign-in--account-switcher-reuse-shared-client)
 - [ ] [6.3 Build the roster console](#63-build-the-roster-console)
 - [ ] [6.4 Package for Microsoft Store (PWABuilder → MSIX) & test install](#64-package-for-microsoft-store-pwabuilder--msix--test-install)
+- [ ] [6.5 Auto-schedule UI (preview → apply → undo)](#65-auto-schedule-ui-preview--apply--undo)
 
 ### Phase 7 — Guardrails (prevent mistakes)
 - [ ] [7.1 Prevent double-booking a person](#71-prevent-double-booking-a-person)
@@ -77,6 +83,7 @@ Note: 0.4 Defered for later, will setup GitHub Now but defer Apple Developer Pro
 - [ ] [11.4 Bulk import](#114-bulk-import)
 - [ ] [11.5 Starter templates](#115-starter-templates)
 
+---
 
 ## Phase 0 — Foundations (make sure we’re building the right thing)
 
@@ -95,10 +102,10 @@ Note: 0.4 Defered for later, will setup GitHub Now but defer Apple Developer Pro
 - **Why:** Professional, reduces risk, and required by app stores.
 - **Done when:** `docs/privacy.md` exists and **support@** can send/receive.
 
-### 0.4 Set up developer accounts (Apple, Google Play, Expo/EAS, GitHub, Microsoft Partner Center)
-- **What:** Create the accounts you’ll publish through and set billing if needed.
-- **Why:** Avoids delays when you’re ready to ship.
-- **Done when:** You can log in to each account; billing configured if required.
+### 0.4 Developer accounts (NOW: GitHub Org; LATER: app stores)
+- **What:** Create the GitHub Organization/repo now; defer Apple/Google/Microsoft store accounts.
+- **Why:** Avoid upfront fees while unblocking repo/CI and collaboration.
+- **Done when:** GitHub Org exists with 2FA enforced, repo created & protected. Store accounts listed as deferred.
 
 ---
 
@@ -108,13 +115,12 @@ Note: 0.4 Defered for later, will setup GitHub Now but defer Apple Developer Pro
 - **What:** One repo with folders for mobile, **web (PWA)**, and shared code.
 - **Why:** Reuse code and keep versions in sync.
 - **Done when:** Running a single command installs/builds all packages.
-- /apps/mobile # Expo app (iOS/Android)
-- /apps/web # React PWA (Microsoft Store-listed)
-- /packages/ui # shared UI components
-- /packages/shared # shared types/utils/Supabase client
-- /packages/config # tsconfig/eslint/prettier configs
-- /supabase # migrations, seeds, RLS policies, functions
-
+- `/apps/mobile` — Expo app (iOS/Android)  
+- `/apps/web` — React PWA (Microsoft Store-listed)  
+- `/packages/ui` — shared UI components  
+- `/packages/shared` — shared types/utils/Supabase client  
+- `/packages/config` — tsconfig/eslint/prettier configs (optional)  
+- `/supabase` — migrations, seeds, RLS policies, functions
 
 ### 1.2 Add TypeScript, ESLint, Prettier, and pre-commit hooks
 - **What:** Static typing + linting + formatting + Husky/lefthook pre-commit.
@@ -150,6 +156,11 @@ Note: 0.4 Defered for later, will setup GitHub Now but defer Apple Developer Pro
 - **Why:** These are the building blocks of rostering.
 - **Done when:** Migration runs; tables are visible in Studio.
 
+### 2.3a Add auto-scheduling tables (V1.1)
+- **What:** Add flexible rule storage, optional recurring availability, per-user limits, and run logs (preview/apply/undo).
+- **Why:** Inputs + auditable history are required for auto-schedule and safe rollback.
+- **Done when:** Tables exist with RLS; seed creates a default policy.
+
 ### 2.4 Add seed data
 - **What:** Script/migration to insert example accounts, users, roles, and sample shifts.
 - **Why:** See real screens immediately for faster UI work.
@@ -183,6 +194,11 @@ Note: 0.4 Defered for later, will setup GitHub Now but defer Apple Developer Pro
 - **What:** Create and deliver notifications (assignment, reminders, replacement offers/claims).
 - **Why:** Keeps people informed without manual texts.
 - **Done when:** Trigger → queued → delivered to device/inbox with basic logging.
+
+### 3.4 Auto-scheduler Edge Function (preview/apply/undo)
+- **What:** Given a date range (and optional roles), propose assignments (preview), apply them transactionally, and support undo via run logs.
+- **Why:** Deterministic, auditable, race-safe automation that respects guardrails.
+- **Done when:** Preview returns valid proposals; apply writes assignments without violations; undo removes exactly what the run added.
 
 ---
 
@@ -265,6 +281,11 @@ Note: 0.4 Defered for later, will setup GitHub Now but defer Apple Developer Pro
 - **What:** Use PWABuilder to create MSIX; submit via Microsoft Partner Center.
 - **Why:** Discoverability and easy install/updates on Windows.
 - **Done when:** Store package installs and updates flow from web deploys.
+
+### 6.5 Auto-schedule UI (preview → apply → undo)
+- **What:** Panel to choose date range/roles/rules, show proposed assignments, accept/skip, apply, and undo last run.
+- **Why:** Gives schedulers fast, safe automation with control.
+- **Done when:** Preview, apply, and undo work end-to-end; a badge shows “X auto-scheduled”.
 
 ---
 
