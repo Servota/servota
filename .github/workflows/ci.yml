@@ -7,7 +7,7 @@ on:
 
 jobs:
   checks:
-    name: Install • Lint • Typecheck
+    name: Install • Build packages • Lint • Typecheck
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,6 +32,9 @@ jobs:
 
       - name: Install deps (frozen lockfile)
         run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages (@servota/ui, @servota/shared)
+        run: pnpm -r --filter "@servota/ui" --filter "@servota/shared" build
 
       - name: Lint
         run: pnpm lint
