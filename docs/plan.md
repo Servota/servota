@@ -1,6 +1,6 @@
 # Roster App — Step-by-Step Plan (Servota)
 
-_Last updated: 26 Aug 2025_
+_Last updated: 27 Aug 2025_
 
 ## Status
 
@@ -24,7 +24,7 @@ _Last updated: 26 Aug 2025_
 
 - [ ] [2.1 Create Supabase projects: dev, staging, prod](#21-create-supabase-projects-dev-staging-prod)
 - [ ] [2.2 Install Supabase CLI and link “dev”](#22-install-supabase-cli-and-link-dev)
-- [ ] [2.3 Write v1 database schema (tables)](#23-write-v1-database-schema-tables)
+- [ ] [2.3 Write v1 database schema (with Teams)](#23-write-v1-database-schema-with-teams)
 - [ ] [2.3a Add auto-scheduling tables (V1.1)](#23a-add-auto-scheduling-tables-v11)
 - [ ] [2.4 Add seed data](#24-add-seed-data)
 - [ ] [2.5 Turn on Row Level Security (RLS) and add policies](#25-turn-on-row-level-security-rls-and-add-policies)
@@ -47,7 +47,7 @@ _Last updated: 26 Aug 2025_
 
 - [ ] [5.1 Create the Expo project and run it](#51-create-the-expo-project-and-run-it)
 - [ ] [5.2 Add sign-in/out with Supabase Auth](#52-add-sign-inout-with-supabase-auth)
-- [ ] [5.3 Add account switcher and membership display](#53-add-account-switcher-and-membership-display)
+- [ ] [5.3 Add account & team switchers and membership display](#53-add-account--team-switchers-and-membership-display)
 - [ ] [5.4 Build “My Roster” (list and/or month view)](#54-build-my-roster-list-andor-month-view)
 - [ ] [5.5 Add Unavailability (create/edit/delete)](#55-add-unavailability-createeditdelete)
 - [ ] [5.6 Add replacement request & claim](#56-add-replacement-request--claim)
@@ -174,33 +174,33 @@ _Last updated: 26 Aug 2025_
 - **Why:** Version-controlled database changes and consistent pushes.
 - **Done when:** `supabase db push` works locally against “dev”.
 
-### 2.3 Write v1 database schema (tables)
+### 2.3 Write v1 database schema (with Teams)
 
-- **What:** Tables for `accounts, profiles, memberships, roles, schedule_templates, shifts, assignments, eligibility, unavailability, replacement_requests, audit_log`.
-- **Why:** These are the building blocks of rostering.
+- **What:** Tables for **accounts with teams**: `accounts, profiles, account_memberships, teams, team_memberships, roles (team-scoped), schedule_templates (team-scoped), shifts (team-scoped), assignments (team-scoped), eligibility (team-scoped), unavailability (account-scoped), replacement_requests (team-scoped), audit_log`.
+- **Why:** Team-scoped rostering inside each Account; cross-team safety via account-scoped rules.
 - **Done when:** Migration runs; tables are visible in Studio.
 
 ### 2.3a Add auto-scheduling tables (V1.1)
 
-- **What:** Add flexible rule storage, optional recurring availability, per-user limits, and run logs (preview/apply/undo).
+- **What:** Add flexible rule storage, optional recurring availability, per-user limits, and run logs (preview/apply/undo). Include **team-scoped** runs with account defaults and team overrides: `scheduling_rules, scheduling_role_overrides, recurring_availability, user_limits, autoschedule_runs(team_id), autoschedule_results`.
 - **Why:** Inputs + auditable history are required for auto-schedule and safe rollback.
-- **Done when:** Tables exist with RLS; seed creates a default policy.
+- **Done when:** Tables exist with RLS; seed creates a default policy per account and team.
 
 ### 2.4 Add seed data
 
-- **What:** Script/migration to insert example accounts, users, roles, and sample shifts.
+- **What:** Script/migration to insert example accounts, teams, users, roles, and sample shifts across multiple teams.
 - **Why:** See real screens immediately for faster UI work.
 - **Done when:** One command populates believable demo data.
 
 ### 2.5 Turn on Row Level Security (RLS) and add policies
 
-- **What:** Policies so users can only see/edit rows for accounts they belong to; writes limited to owner/scheduler.
+- **What:** Policies so users can only see/edit rows for **accounts they belong to**, and write within **teams** where they are `scheduler` (or account `owner/admin`). Unavailability is editable by the user and visible to account admins/schedulers.
 - **Why:** Tenant safety; prevents data leaks.
-- **Done when:** A user from Account A cannot read/edit Account B.
+- **Done when:** A user from Account A cannot read/edit Account B; a scheduler can only write within their Team(s).
 
 ### 2.6 Test RLS with simple automated checks
 
-- **What:** Tests that attempt forbidden reads/writes and allowed ones.
+- **What:** Tests that attempt forbidden reads/writes and allowed ones — including **cross-team overlap blocking** and team-scoped writes.
 - **Why:** Catch security mistakes early.
 - **Done when:** Tests fail when they should and pass when allowed.
 
@@ -210,7 +210,7 @@ _Last updated: 26 Aug 2025_
 
 ### 3.1 Replacement claim function (first-come-first-served)
 
-- **What:** Atomic function/RPC that assigns an open shift to the first eligible claimant.
+- **What:** Atomic function/RPC that assigns an open shift **within a team** to the first eligible claimant; enforces capacity and eligibility; respects account-wide unavailability/overlap.
 - **Why:** Prevents two people claiming the same spot.
 - **Done when:** Simultaneous taps never exceed shift capacity.
 
@@ -222,13 +222,13 @@ _Last updated: 26 Aug 2025_
 
 ### 3.3 Notification sender (push/email queue)
 
-- **What:** Create and deliver notifications (assignment, reminders, replacement offers/claims).
+- **What:** Create and deliver notifications (assignment, reminders, replacement offers/claims) with **team context**.
 - **Why:** Keeps people informed without manual texts.
 - **Done when:** Trigger → queued → delivered to device/inbox with basic logging.
 
 ### 3.4 Auto-scheduler Edge Function (preview/apply/undo)
 
-- **What:** Given a date range (and optional roles), propose assignments (preview), apply them transactionally, and support undo via run logs.
+- **What:** Given a **team**, date range (and optional roles), propose assignments (preview), apply them transactionally with an **advisory lock per `(account_id, team_id)`**, and support undo via run logs.
 - **Why:** Deterministic, auditable, race-safe automation that respects guardrails.
 - **Done when:** Preview returns valid proposals; apply writes assignments without violations; undo removes exactly what the run added.
 
@@ -238,13 +238,13 @@ _Last updated: 26 Aug 2025_
 
 ### 4.1 Generate TypeScript types from the database
 
-- **What:** Codegen DB types for strong typing in clients.
+- **What:** Codegen DB types for strong typing in clients (including team-scoped tables).
 - **Why:** Fewer bugs when reading/writing data.
 - **Done when:** Both apps import and use the generated types.
 
 ### 4.2 Build a shared Supabase client wrapper
 
-- **What:** Helper that sets up auth, selects current account, and handles retries.
+- **What:** Helper that sets up auth and **current context (account + optional team)**, and handles retries.
 - **Why:** Avoid duplicated setup and auth edge cases.
 - **Done when:** Both apps use the same client wrapper successfully.
 
@@ -270,33 +270,33 @@ _Last updated: 26 Aug 2025_
 - **Why:** Users must log in to see their roster.
 - **Done when:** You can sign in/out and stay signed in.
 
-### 5.3 Add account switcher and membership display
+### 5.3 Add account & team switchers and membership display
 
-- **What:** UI to switch which organisation you’re viewing; show your role(s).
-- **Why:** Users can belong to multiple teams/churches.
-- **Done when:** Switching accounts changes all visible data.
+- **What:** UI to switch **Account** and then **Team** within that Account; show account role(s) and team role(s).
+- **Why:** Users can belong to multiple accounts and teams.
+- **Done when:** Switching account/team changes all visible data.
 
 ### 5.4 Build “My Roster” (list and/or month view)
 
-- **What:** Calendar/list showing only the user’s assignments.
+- **What:** Calendar/list showing the user’s assignments with filters (All, by Account, by Team).
 - **Why:** Core value for volunteers and staff.
-- **Done when:** Upcoming shifts render with key details.
+- **Done when:** Upcoming shifts render with key details and filters work.
 
 ### 5.5 Add Unavailability (create/edit/delete)
 
-- **What:** Let users mark times they can’t serve.
-- **Why:** Prevent double-booking by schedulers.
+- **What:** Let users mark times they can’t serve (**account-scoped**).
+- **Why:** Prevent double-booking by schedulers across all teams.
 - **Done when:** Assignments over blackout times are blocked.
 
 ### 5.6 Add replacement request & claim
 
-- **What:** “Can’t make it” → opens a claimable slot; eligible peers can accept.
+- **What:** “Can’t make it” → opens a claimable slot; eligible peers in the **same team** can accept.
 - **Why:** Swaps happen without phone tag.
 - **Done when:** End-to-end flow updates assignment correctly.
 
 ### 5.7 Enable push notifications (Expo)
 
-- **What:** Save device tokens; deliver assignment/reminder/offer alerts.
+- **What:** Save device tokens; deliver assignment/reminder/offer alerts (team-aware).
 - **Why:** Users get timely updates.
 - **Done when:** Devices receive test and real notifications.
 
@@ -312,15 +312,15 @@ _Last updated: 26 Aug 2025_
 
 ### 6.2 Add sign-in & account switcher (reuse shared client)
 
-- **What:** Same auth flow and account switcher as mobile.
+- **What:** Same auth flow and **account switcher** as mobile; shows current account context.
 - **Why:** Consistency; less code.
-- **Done when:** You can log in and switch context.
+- **Done when:** You can log in and switch account context.
 
 ### 6.3 Build the roster console
 
-- **What:** Grid/calendar to create roles, add schedule templates, generate shifts, and assign eligible people (drag/click).
+- **What:** **Team-scoped** grid/calendar to manage Roles, Schedule Templates, Shifts, Assignments, Eligibility, and the **Teams management** page (create/rename/archive teams).
 - **Why:** This is where schedulers live daily.
-- **Done when:** You can generate shifts and assign smoothly with conflict checks.
+- **Done when:** You can manage teams, generate shifts, and assign smoothly with conflict checks.
 
 ### 6.4 Package for Microsoft Store (PWABuilder → MSIX) & test install
 
@@ -330,7 +330,7 @@ _Last updated: 26 Aug 2025_
 
 ### 6.5 Auto-schedule UI (preview → apply → undo)
 
-- **What:** Panel to choose date range/roles/rules, show proposed assignments, accept/skip, apply, and undo last run.
+- **What:** Panel (within a **Team**) to choose date range/roles/rules, show proposed assignments, accept/skip, apply, and undo last run.
 - **Why:** Gives schedulers fast, safe automation with control.
 - **Done when:** Preview, apply, and undo work end-to-end; a badge shows “X auto-scheduled”.
 
@@ -340,7 +340,7 @@ _Last updated: 26 Aug 2025_
 
 ### 7.1 Prevent double-booking a person
 
-- **What:** DB exclusion constraint on overlapping **confirmed** assignments per user.
+- **What:** DB exclusion constraint on overlapping **confirmed** assignments per user **within an account** (across all teams).
 - **Why:** Eliminates human error.
 - **Done when:** Overlaps are rejected with a clear message.
 
@@ -352,7 +352,7 @@ _Last updated: 26 Aug 2025_
 
 ### 7.3 Enforce eligibility everywhere
 
-- **What:** Only eligible users for a role can be assigned; validate in UI and DB.
+- **What:** Only eligible users for a role (within that **team**) can be assigned; validate in UI and DB.
 - **Why:** Safety and quality.
 - **Done when:** Ineligible assignments are impossible.
 
@@ -362,7 +362,7 @@ _Last updated: 26 Aug 2025_
 
 ### 8.1 Add plan & feature flags to accounts
 
-- **What:** Store and read plan (Family/Community/Organisation) and feature gates.
+- **What:** Store and read plan (Family/Community/Organisation) and feature gates including **team caps** per account.
 - **Why:** Unlock pricing tiers and limits later.
 - **Done when:** App branches features/limits based on plan.
 
@@ -390,19 +390,19 @@ _Last updated: 26 Aug 2025_
 
 ### 9.1 End-to-end tests for critical flows
 
-- **What:** Automated flows for sign-in, assign, replace, notifications.
+- **What:** Automated flows for sign-in, assign, replace, notifications (including team context).
 - **Why:** Prevent regressions before release.
 - **Done when:** Tests run locally and in CI with consistent pass.
 
 ### 9.2 Error tracking (Sentry or similar)
 
-- **What:** Capture exceptions with account/user context.
+- **What:** Capture exceptions with account/team/user context.
 - **Why:** Fix issues fast with real diagnostics.
 - **Done when:** Errors appear in the dashboard with useful metadata.
 
 ### 9.3 Product analytics (minimal)
 
-- **What:** Track key events (sign-in, create role, create template, assignment, replacement claim).
+- **What:** Track key events (sign-in, create team, create role, create template, assignment, replacement claim, auto-schedule apply).
 - **Why:** Understand adoption and friction points.
 - **Done when:** Events stream into analytics with basic dashboards.
 
@@ -430,13 +430,13 @@ _Last updated: 26 Aug 2025_
 
 ### 10.3 First-run onboarding
 
-- **What:** Guided flow: create account → invite people → set eligibility → create role → template → generate shifts → assign.
+- **What:** Guided flow: create account → create team(s) → invite people → set eligibility → create role → template → generate shifts → assign.
 - **Why:** Time-to-value in minutes.
 - **Done when:** A new user completes onboarding without help.
 
 ### 10.4 Minimal marketing site
 
-- **What:** Landing page with promise, features, pricing, privacy, support.
+- **What:** Landing page with promise, features, pricing (user & team caps), privacy, support.
 - **Why:** Validation and sales air cover.
 - **Done when:** Site is live and can collect emails.
 
@@ -446,7 +446,7 @@ _Last updated: 26 Aug 2025_
 
 ### 11.1 Fairness/quotas
 
-- **What:** Caps per person (e.g., max assignments per month).
+- **What:** Caps per person (e.g., max assignments per month) and per-team reporting.
 - **Why:** Balance load and avoid burnout.
 - **Done when:** Quotas enforce and report cleanly.
 
@@ -470,6 +470,6 @@ _Last updated: 26 Aug 2025_
 
 ### 11.5 Starter templates
 
-- **What:** Presets for Churches / Workplaces / Families.
+- **What:** Presets for Churches / Workplaces / Families (with **Team** examples like Youth, Music, Hospitality).
 - **Why:** Faster setup and better defaults.
 - **Done when:** Users can start from a template in onboarding.
