@@ -1,6 +1,6 @@
 # Scheduling & Rostering App (Details) — Servota
 
-_Last updated: 27 Aug 2025_
+_Last updated: 28 Aug 2025_
 
 ## What it is
 
@@ -12,24 +12,26 @@ A simple, flexible scheduling tool for any group that needs a roster—churches,
 - **Workplaces & clubs:** shift rosters, duties, on-call coverage
 - **Families:** recurring chores and tasks
 
-## Core objects (with Teams)
+## Core objects (Teams + Events + Requirements)
 
 - **Account** — an organisation/tenant
 - **Team** — a group inside an Account (e.g., Main Roster, Youth, Music)
 - **User** — a person with a Supabase Auth identity
 - **Account Membership** — links User ↔ Account with role: `owner`, `admin` (global admin)
 - **Team Membership** — links User ↔ Team with role: `scheduler`, `member`
-- **Role** — what needs doing; **team-scoped** (e.g., “Devotion Leader” in Youth)
-- **Schedule Template** — recurrence for a Role (once-off/weekly/monthly); **team-scoped**
-- **Shift** — dated instance from a Schedule Template; has capacity; **team-scoped**
-- **Eligibility** — who is allowed/willing/qualified for a Role; **team-scoped**
-- **Assignment** — User ↔ Shift link when rostered; **team-scoped**
-- **Unavailability** — user blackout dates/times; **account-scoped** (blocks clashes across all Teams in the Account)
-- **Replacement Request** — a rostered user can’t attend; opens a claimable slot; **team-scoped**
-- **(V1.1) Scheduling Rules** — JSON policy default at Account, with per-Team overrides
+- **Requirement** — team-scoped tag used to gate assignment (e.g., “Communion Leader”, “WWCC”, “First Aid”)
+- **Event Template** — recurrence config that generates dated **Events**
+- **Event** — a scheduled thing to be staffed; has label, description, start/end, capacity; team-scoped
+- **Event Requirements** — Requirements an Event needs (0, 1, or many) with a mode (`ALL_OF`/`ANY_OF`)
+- **User Requirements** — Requirements a User holds in the Team
+- **Assignment** — User ↔ Event link when rostered
+- **Unavailability** — user blackout dates/times; account-scoped (blocks clashes across all Teams)
+- **Replacement Request** — “I can’t make it” → opens a claimable spot in the Event
+- **Swap Request** — propose exchanging assignments with another user on the **same Event**
+- **(V1.1) Scheduling Rules** — JSON policy defaults at Account, with Team overrides
 - **(V1.1) Recurring Availability (optional)** — weekly “OK to serve” windows (account-scoped)
 - **(V1.1) User Limits** — per-user caps (max/week, max/month, min gap) (account-scoped)
-- **(V1.1) Auto-schedule Run/Result** — **team-scoped** log of proposals, applied picks, and reasons
+- **(V1.1) Auto-schedule Run/Result** — team-scoped log of proposals, applied picks, and reasons
 
 ---
 
@@ -41,48 +43,57 @@ A simple, flexible scheduling tool for any group that needs a roster—churches,
 - **Account Memberships:** `owner`, `admin` (global admin across all Teams)
 - **Team Memberships:** `scheduler`, `member` (per Team)
 
-### Roles & schedules (per Team)
+### Events & recurrence (per Team)
 
-- Create **Teams** inside an Account
-- Within a Team: create **Roles** and **Schedule Templates** → system generates **Shifts**
+- Create **Event Templates** (once-off / daily / weekly / fortnightly / monthly) with label, description, start/end, capacity
+- Generate **Events** from templates; edit single Events as needed
 
-### Eligibility & assigning (per Team)
+### Requirements & assigning
 
-- Mark **Eligibility** (User ↔ Role) within a Team
-- Only eligible, available Users can be **Assigned** to Shifts
-- **Scheduler console:** team-scoped grid/calendar with filters
-- **My calendar:** see Assignments across all Teams/Accounts you belong to, with filters (All, by Account, by Team)
+- Define **Requirements** per Team (flexible: roles, skills, checks)
+- Assign **Requirements to Users** (User Requirements)
+- Add **Requirements to Events** (Event Requirements) with a mode:
+  - `ALL_OF` (default) — user must have **all** listed requirements
+  - `ANY_OF` — user must have **at least one**
+- **Assignment rule:** a user can be assigned iff Event Requirements are satisfied **and** user is not unavailable, has no overlap, and capacity allows
+- **Scheduler console:** team-scoped grid/calendar; **Assign** only lists matching users
 
 ### Unavailability & clashes
 
-- Users record **Unavailability** at the Account level; system blocks conflicting assignments **across all Teams** in that Account and prevents overlaps
+- Users record **Unavailability** (account-scoped); system blocks conflicting assignments across all Teams in the Account and prevents overlaps
 
-### Smart replacement flow (per Team)
+### Replacement flow (per Team)
 
 - Rostered user taps **“Can’t make it”**
 - Notify Team Scheduler(s)
-- Broadcast to **eligible, available Team members** not already rostered at that time
-- First-come, first-served acceptance auto-assigns and confirms
+- Broadcast to **eligible & available Team members** (who satisfy Event Requirements and aren’t overlapping)
+- First-come, first-served claim auto-assigns and confirms
+
+### Peer-to-peer swaps (per Team)
+
+- From team roster, a user selects another **assigned** person on the **same future Event** and **proposes a swap**
+- Recipient Accept/Decline; optional Team policy may require scheduler approval before apply
+- Applied swaps **atomically exchange `assignments.user_id`** on the two rows
 
 ### Notifications (initial)
 
-- **Triggers:** assignment created/changed, upcoming reminders (e.g., 24–48h), replacement offers/claims
+- **Triggers:** assignment created/changed, upcoming reminders (e.g., 24–48h), replacement offers/claims, swap requested/accepted/declined/cancelled/expired/approved/applied
 - **Channels:** push/email in v1 (SMS optional later)
 
 ---
 
 ## Auto-scheduling (V1.1, per Team)
 
-**What:** One-click **Preview → Apply → Undo** that assigns shifts over a date range for a **Team**, using rules (fairness, caps, min gap) and availability.  
+**What:** One-click **Preview → Apply → Undo** that assigns Events over a date range for a **Team**, using rules (fairness, caps, min gap) and the **Requirements** filter.  
 **Why:** Save scheduler hours while staying fair and avoiding conflicts.  
 **How (quick rules):**
 
-- Candidates per shift = **eligible ∩ not unavailable ∩ no overlap ∩ respects min_gap** (team context; overlap checked account-wide)
-- **Scoring:** favour people with fewer recent assignments for that role/team; reject if weekly/monthly caps exceeded; prefer even rotation
+- Candidates per Event = users who **satisfy Event Requirements** ∩ **not unavailable** ∩ **no overlap** ∩ **respects min_gap**
+- **Scoring:** favour people with fewer recent assignments; reject if weekly/monthly caps exceeded; prefer even rotation
 - **Apply:** transactional inserts to `assignments`, capacity-safe; **Undo:** remove only what this run added
 - **Audit:** store proposals, picks, and “why” in run/results tables
 
-UI: in the **team roster console**, pick date range + roles + rule set → **Preview** (accept/skip per row) → **Apply** → optional **Undo last run**.
+UI: in the **team roster console**, pick date range + requirement mode/rule set → **Preview** → **Apply** → optional **Undo last run**.
 
 ---
 
@@ -92,7 +103,7 @@ UI: in the **team roster console**, pick date range + roles + rule set → **Pre
 - **Web/Desktop:** **React PWA (Vite)**, installable; **packaged for Microsoft Store (Windows)** via PWABuilder → MSIX  
   Auto-updates from web deploys; offline shell for core views; supports Windows notifications via Web Push
 - **Backend/Data:** Supabase (Postgres) with Row Level Security (RLS)
-- **Server logic:** Supabase Edge Functions for webhooks, notifications, RRULE expansions, race-safe replacement claims, and **(V1.1) auto-scheduler** (team-scoped)
+- **Server logic:** Supabase Edge Functions for webhooks, notifications, RRULE expansions, race-safe replacement/swap operations, and **(V1.1) auto-scheduler** (team-scoped)
 - **Subscriptions:** Stripe/Paddle → webhook → update `accounts.status`
 
 ### Monorepo (high level)
@@ -106,34 +117,35 @@ UI: in the **team roster console**, pick date range + roles + rule set → **Pre
 
 ---
 
-## Data model (Accounts with Teams; users can belong to many Accounts and Teams)
+## Data model (Accounts with Teams; Events + Requirements)
 
 **MVP tables**
 
 - accounts(id, name, status, plan, stripe_customer_id, created_at)
 - profiles(user_id PK → auth.users.id, full_name, default_account_id)
 - **account_memberships**(id, account_id, user_id, role ENUM('owner','admin'), status ENUM('active','invited','suspended'))
-- **teams**(id, account_id, name, active, UNIQUE(account_id, name))
+- **teams**(id, account_id, name, active, **allow_swaps boolean default true**, **roster_visibility ENUM('team','account','private') default 'team'**, UNIQUE(account_id, name))
 - **team_memberships**(id, account_id, team_id, user_id, role ENUM('scheduler','member'), status)
-- **roles**(id, account_id, team_id, name, notes, active, UNIQUE(account_id, team_id, name))
-- **eligibility**(id, account_id, team_id, user_id, role_id)
-- **schedule_templates**(id, account_id, team_id, role_id, start_date, time, duration, rrule, capacity)
-- **shifts**(id, account_id, team_id, role_id, starts_at, ends_at, capacity, status)
-- **assignments**(id, account_id, team_id, shift_id, user_id, status, assigned_at, source)
+- **requirements**(id, account_id, team_id, name, active, UNIQUE(account_id, team_id, name))
+- **user_requirements**(id, account_id, team_id, user_id, requirement_id)
+- **event_templates**(id, account_id, team_id, label, description, start_time, duration, rrule, capacity, requirement_mode ENUM('ALL_OF','ANY_OF') DEFAULT 'ALL_OF')
+- **events**(id, account_id, team_id, template_id NULLABLE, label, description, starts_at, ends_at, capacity, requirement_mode ENUM('ALL_OF','ANY_OF') DEFAULT 'ALL_OF', status)
+- **event_requirements**(id, account_id, team_id, event_id, requirement_id)
+- **assignments**(id, account_id, team_id, event_id, user_id, status, assigned_at, source ENUM('manual','replacement','swap','auto'))
 - **unavailability**(id, account_id, user_id, starts_at, ends_at, reason) — account-scoped
-- **replacement_requests**(id, account_id, team_id, shift_id, requester_user_id, opened_at, closed_at, status)
+- **replacement_requests**(id, account_id, team_id, event_id, requester_user_id, opened_at, closed_at, status)
+- **swap_requests**(id, account_id, team_id, event_id, from_assignment_id, to_assignment_id, from_user_id, to_user_id, status ENUM('pending','accepted','declined','cancelled','expired','needs_approval','applied'), message, expires_at, created_at, responded_at, applied_at)
 - **audit_log**(id, account_id, team_id NULLABLE, table_name, action, row_id, user_id, at, diff)
 
 **V1.1 auto-scheduling tables**
 
 - **scheduling_rules**(id, account_id, team_id NULLABLE, name, params JSONB, active) — account default; team overrides
-- **scheduling_role_overrides**(id, account_id, team_id, role_id, params JSONB) — per-team/per-role tweaks
-- **recurring_availability**(id, account_id, user_id, weekday, start_local, end_local, timezone) — optional weekly OK windows
-- **user_limits**(id, account_id, user_id, max_per_week, max_per_month, min_gap_hours) — per-user caps
+- **recurring_availability**(id, account_id, user_id, weekday, start_local, end_local, timezone)
+- **user_limits**(id, account_id, user_id, max_per_week, max_per_month, min_gap_hours)
 - **autoschedule_runs**(id, account_id, team_id, started_by, range_from, range_to, params JSONB, status, stats JSONB)
-- **autoschedule_results**(id, run_id, shift_id, user_id, reason, status)
+- **autoschedule_results**(id, run_id, event_id, user_id, reason, status)
 
-**Keys/Indexes:** UUID PKs; `created_at/updated_at` everywhere; indexes on `(account_id, fk)` and `(account_id, team_id, fk)`; uniques on `(account_id, team name)` and `(account_id, team_id, role name)`.
+**Keys/Indexes:** UUID PKs; `created_at/updated_at` everywhere; indexes on `(account_id, fk)` and `(account_id, team_id, fk)`; uniques on `(account_id, team name)` and `(account_id, team_id, requirement name)`.
 
 ---
 
@@ -141,6 +153,7 @@ UI: in the **team roster console**, pick date range + roles + rule set → **Pre
 
 - **RLS everywhere.** Each row carries `account_id` (and most roster rows carry `team_id`). Policies gate reads/writes by the user’s **account_membership** and, for team-scoped writes, by **team_membership**.
 - **Write roles.** Only `owner`/`admin` (account) or `scheduler` (team) can create/update roster data in that scope.
+- **Swap permissions.** A user may create/read a `swap_request` if they are the **from_user**, **to_user**, a **team scheduler**, or **account admin**. Applying a swap is only via a secure RPC/Edge Function that validates team policy and guardrails.
 - **No service key in clients.** Client apps use user JWTs only.
 - **Audit trail.** Triggers write to `audit_log` for inserts/updates/deletes.
 - **(V1.1)** Auto-schedule runs/results are readable by members; **apply/undo** limited to account `owner/admin` or team `scheduler`.
@@ -152,19 +165,20 @@ On failed payment, set `accounts.status='suspended'`. RLS denies all access so d
 
 ## Concurrency & fairness (baseline + V1.1)
 
+- **Requirement match:** Event Requirements must be satisfied by User Requirements (per mode) for every assignment path
 - **Overlap guard:** exclusion constraint prevents overlapping **confirmed** assignments per user **within an Account** (across all Teams)
-- **Capacity guard:** replacement claim/apply steps run capacity-safe transactions
-- **Eligibility enforced** at read and write
-- **(V1.1) Auto-scheduler:** candidates filtered by eligibility, unavailability, overlap, and **min_gap_hours**; scoring prefers even rotation and respects **max_per_week/month**. **Apply** uses a transaction + **advisory lock per `(account_id, team_id)`**; **Undo** removes only assignments created by that run.
+- **Capacity guard:** replacement/assign/apply steps run capacity-safe transactions
+- **Swap safety:** swaps exchange users on two assignment rows in one transaction; re-validate requirements, availability, overlap; optionally require scheduler approval
+- **(V1.1) Auto-scheduler:** filters by Requirements, unavailability, overlap, and **min_gap_hours**; scoring prefers even rotation and respects **max_per_week/month**; **Apply** uses an advisory lock per `(account_id, team_id)`; **Undo** removes only what that run added
 
 ---
 
 ## UX snapshot
 
 - **Switchers:** Account switcher → Team switcher (within the Account)
-- **Scheduler console (Team):** Create Roles → add Schedule Templates → generate Shifts → assign → open replacements  
-  **(V1.1)** Choose date range/roles → **Auto-schedule Preview** → accept/skip → **Apply** → **Undo**
-- **Member:** My Roster, mark Unavailability, request replacements, accept offers. Filter by All, Account, or specific Team(s)
+- **Scheduler console (Team):** manage Requirements, Event Templates → generate Events → assign (filtered by Requirements) → replacements → **swap approvals** (if required)  
+  **(V1.1)** Auto-schedule: Preview → Apply → Undo
+- **Member:** My Roster, mark Unavailability, request replacements, propose/accept swaps; filter by All, Account, or Team
 
 ---
 
@@ -175,19 +189,20 @@ On failed payment, set `accounts.status='suspended'`. RLS denies all access so d
 - Push tokens stored per user (Expo); notifications sent from Edge Functions
 - **PWA:** installable on Windows, macOS, and supported browsers; offline shell for read views; Microsoft Store distribution via MSIX; auto-updates on deploy
 - **Autoschedule apply:** use Postgres advisory locks per Team
+- **Swap expiry:** `swap_requests.expires_at` can auto-expire pending swaps via a scheduled task (later)
 
 ---
 
 ## Bottom line
 
-Accepted plan: multi-tenant Supabase with **Accounts containing Teams**, strict RLS, **Expo mobile + React PWA (Store-listed)**, Edge Functions for server tasks. Start simple: Teams → Roles → Templates → Shifts → Assignments → Unavailability → Replacement flow, then add **Auto-scheduling (V1.1)** per Team for fast, fair assignment.
+Accepted plan: multi-tenant Supabase with **Accounts → Teams → Events**, flexible **Requirements** gating assignment, strict RLS, **Expo mobile + React PWA (Store-listed)**, Edge Functions for server tasks. Start simple: define Requirements → create Event Templates → generate Events → Assign → Replacements → **Peer Swaps**. Then add **Auto-scheduling (V1.1)** per Team for fast, fair assignment.
 
 ---
 
 ## Subscription tier idea (subject to change)
 
-| Tier             | Who it’s for               | Monthly | Active members (hard) | Teams (hard) | Roles (soft) | Notes                                                 |
-| ---------------- | -------------------------- | ------: | --------------------: | -----------: | -----------: | ----------------------------------------------------- |
-| **Family**       | Households, small groups   |      $9 |                    10 |            2 |           20 | Schedulers not capped; assign within team caps        |
-| **Community**    | Typical churches/clubs     |     $49 |                   100 |           10 |          100 | Fits “50 volunteers” with multiple Teams              |
-| **Organisation** | Larger churches/businesses |     $99 |                   250 |           25 |          200 | Priority support later; exports/integrations unlocked |
+| Tier             | Who it’s for               | Monthly | Active members (hard) | Teams (hard) | Notes                                                 |
+| ---------------- | -------------------------- | ------: | --------------------: | -----------: | ----------------------------------------------------- |
+| **Family**       | Households, small groups   |      $9 |                    10 |            2 | Schedulers not capped; assign within team caps        |
+| **Community**    | Typical churches/clubs     |     $49 |                   100 |           10 | Fits “50 volunteers” with multiple Teams              |
+| **Organisation** | Larger churches/businesses |     $99 |                   250 |           25 | Priority support later; exports/integrations unlocked |

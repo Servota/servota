@@ -1,6 +1,6 @@
 # Roster App — Step-by-Step Plan (Servota)
 
-_Last updated: 27 Aug 2025_
+_Last updated: 28 Aug 2025_
 
 ## Status
 
@@ -11,7 +11,7 @@ _Last updated: 27 Aug 2025_
 - [x] [0.3 Write privacy & data-retention basics (1 page) + support email](#03-write-privacy--data-retention-basics-1-page--support-email)
 - [x] [0.4 Developer accounts (NOW: GitHub Org; LATER: app stores)](#04-developer-accounts-now-github-org-later-app-stores)
 
-> Note: Apple/Google/Microsoft store accounts are deferred to avoid fees until builds are ready.
+> Note: Apple/Google/Microsoft store accounts are deferred until builds are ready.
 
 ### Phase 1 — Repo, tooling, and CI
 
@@ -24,7 +24,7 @@ _Last updated: 27 Aug 2025_
 
 - [ ] [2.1 Create Supabase projects: dev, staging, prod](#21-create-supabase-projects-dev-staging-prod)
 - [ ] [2.2 Install Supabase CLI and link “dev”](#22-install-supabase-cli-and-link-dev)
-- [ ] [2.3 Write v1 database schema (with Teams)](#23-write-v1-database-schema-with-teams)
+- [ ] [2.3 Write v1 database schema (Teams, Events & Requirements, Swaps)](#23-write-v1-database-schema-teams-events--requirements-swaps)
 - [ ] [2.3a Add auto-scheduling tables (V1.1)](#23a-add-auto-scheduling-tables-v11)
 - [ ] [2.4 Add seed data](#24-add-seed-data)
 - [ ] [2.5 Turn on Row Level Security (RLS) and add policies](#25-turn-on-row-level-security-rls-and-add-policies)
@@ -36,6 +36,7 @@ _Last updated: 27 Aug 2025_
 - [ ] [3.2 Subscription webhook (Stripe or Paddle)](#32-subscription-webhook-stripe-or-paddle)
 - [ ] [3.3 Notification sender (push/email queue)](#33-notification-sender-pushemail-queue)
 - [ ] [3.4 Auto-scheduler Edge Function (preview/apply/undo)](#34-auto-scheduler-edge-function-previewapplyundo)
+- [ ] [3.5 Swap assignments flow (request/accept/approve/apply/cancel/expire)](#35-swap-assignments-flow-requestacceptapproveapplycancelexpire)
 
 ### Phase 4 — Shared client core
 
@@ -51,21 +52,25 @@ _Last updated: 27 Aug 2025_
 - [ ] [5.4 Build “My Roster” (list and/or month view)](#54-build-my-roster-list-andor-month-view)
 - [ ] [5.5 Add Unavailability (create/edit/delete)](#55-add-unavailability-createeditdelete)
 - [ ] [5.6 Add replacement request & claim](#56-add-replacement-request--claim)
-- [ ] [5.7 Enable push notifications (Expo)](#57-enable-push-notifications-expo)
+- [ ] [5.7 Add peer-to-peer swaps (propose/accept; optional approval)](#57-add-peer-to-peer-swaps-proposeaccept-optional-approval)
+- [ ] [5.8 Enable push notifications (Expo)](#58-enable-push-notifications-expo)
 
 ### Phase 6 — Web/Desktop app (React PWA + Microsoft Store)
 
 - [ ] [6.1 Create React + Vite PWA and run it](#61-create-react--vite-pwa-and-run-it)
 - [ ] [6.2 Add sign-in & account switcher (reuse shared client)](#62-add-sign-in--account-switcher-reuse-shared-client)
-- [ ] [6.3 Build the roster console](#63-build-the-roster-console)
-- [ ] [6.4 Package for Microsoft Store (PWABuilder → MSIX) & test install](#64-package-for-microsoft-store-pwabuilder--msix--test-install)
-- [ ] [6.5 Auto-schedule UI (preview → apply → undo)](#65-auto-schedule-ui-preview--apply--undo)
+- [ ] [6.3 Build the team roster console (Requirements-aware)](#63-build-the-team-roster-console-requirements-aware)
+- [ ] [6.4 Team settings: allow_swaps, roster_visibility](#64-team-settings-allow_swaps-roster_visibility)
+- [ ] [6.5 Swap approvals queue (if policy requires)](#65-swap-approvals-queue-if-policy-requires)
+- [ ] [6.6 Package for Microsoft Store (PWABuilder → MSIX) & test install](#66-package-for-microsoft-store-pwabuilder--msix--test-install)
+- [ ] [6.7 Auto-schedule UI (preview → apply → undo)](#67-auto-schedule-ui-preview--apply--undo)
 
 ### Phase 7 — Guardrails (prevent mistakes)
 
 - [ ] [7.1 Prevent double-booking a person](#71-prevent-double-booking-a-person)
-- [ ] [7.2 Enforce shift capacity](#72-enforce-shift-capacity)
-- [ ] [7.3 Enforce eligibility everywhere](#73-enforce-eligibility-everywhere)
+- [ ] [7.2 Enforce event capacity](#72-enforce-event-capacity)
+- [ ] [7.3 Enforce Requirements everywhere](#73-enforce-requirements-everywhere)
+- [ ] [7.4 Enforce swap policy & audit](#74-enforce-swap-policy--audit)
 
 ### Phase 8 — Subscriptions & account lifecycle
 
@@ -154,7 +159,7 @@ _Last updated: 27 Aug 2025_
 
 ### 1.4 Add CI (GitHub Actions) for install/lint/typecheck
 
-- **What:** Workflow that installs deps and runs typecheck + lint on PRs.
+- **What:** Workflow that installs deps, **builds shared packages**, and runs typecheck + lint on PRs.
 - **Why:** Prevents broken code from merging.
 - **Done when:** CI runs automatically and shows green on `main`.
 
@@ -174,33 +179,35 @@ _Last updated: 27 Aug 2025_
 - **Why:** Version-controlled database changes and consistent pushes.
 - **Done when:** `supabase db push` works locally against “dev”.
 
-### 2.3 Write v1 database schema (with Teams)
+### 2.3 Write v1 database schema (Teams, Events & Requirements, Swaps)
 
-- **What:** Tables for **accounts with teams**: `accounts, profiles, account_memberships, teams, team_memberships, roles (team-scoped), schedule_templates (team-scoped), shifts (team-scoped), assignments (team-scoped), eligibility (team-scoped), unavailability (account-scoped), replacement_requests (team-scoped), audit_log`.
-- **Why:** Team-scoped rostering inside each Account; cross-team safety via account-scoped rules.
+- **What:** Tables for **accounts with teams**, **Events**, flexible **Requirements**, and swaps:  
+  `accounts, profiles, account_memberships, teams(allow_swaps, roster_visibility), team_memberships, requirements, user_requirements, event_templates, events, event_requirements, assignments, unavailability, replacement_requests, swap_requests, audit_log`.
+- **Why:** Team-scoped rostering with assignment gated by Requirements; cross-team safety via account-scoped rules; built-in peer swaps.
 - **Done when:** Migration runs; tables are visible in Studio.
 
 ### 2.3a Add auto-scheduling tables (V1.1)
 
-- **What:** Add flexible rule storage, optional recurring availability, per-user limits, and run logs (preview/apply/undo). Include **team-scoped** runs with account defaults and team overrides: `scheduling_rules, scheduling_role_overrides, recurring_availability, user_limits, autoschedule_runs(team_id), autoschedule_results`.
-- **Why:** Inputs + auditable history are required for auto-schedule and safe rollback.
+- **What:** Team-scoped runs with account defaults and team overrides:  
+  `scheduling_rules, recurring_availability, user_limits, autoschedule_runs(team_id), autoschedule_results`.
+- **Why:** Inputs + auditable history for preview/apply/undo.
 - **Done when:** Tables exist with RLS; seed creates a default policy per account and team.
 
 ### 2.4 Add seed data
 
-- **What:** Script/migration to insert example accounts, teams, users, roles, and sample shifts across multiple teams.
+- **What:** Insert example accounts, teams, **requirements**, users with **user_requirements**, event templates, generated events, assignments; include one pending `swap_request` and one `replacement_request`.
 - **Why:** See real screens immediately for faster UI work.
 - **Done when:** One command populates believable demo data.
 
 ### 2.5 Turn on Row Level Security (RLS) and add policies
 
-- **What:** Policies so users can only see/edit rows for **accounts they belong to**, and write within **teams** where they are `scheduler` (or account `owner/admin`). Unavailability is editable by the user and visible to account admins/schedulers.
+- **What:** Users can only see/edit rows for **accounts they belong to**, and write within **teams** where they are `scheduler` (or account `owner/admin`). Unavailability is editable by the user and visible to account admins/schedulers. Swaps readable by involved users and schedulers/admins; applying swaps via secure RPC only.
 - **Why:** Tenant safety; prevents data leaks.
 - **Done when:** A user from Account A cannot read/edit Account B; a scheduler can only write within their Team(s).
 
 ### 2.6 Test RLS with simple automated checks
 
-- **What:** Tests that attempt forbidden reads/writes and allowed ones — including **cross-team overlap blocking** and team-scoped writes.
+- **What:** Tests for forbidden/allowed reads & writes — including **requirement-gated assignment**, **cross-team overlap blocking**, **swap visibility**, and **team-scoped writes**.
 - **Why:** Catch security mistakes early.
 - **Done when:** Tests fail when they should and pass when allowed.
 
@@ -210,9 +217,9 @@ _Last updated: 27 Aug 2025_
 
 ### 3.1 Replacement claim function (first-come-first-served)
 
-- **What:** Atomic function/RPC that assigns an open shift **within a team** to the first eligible claimant; enforces capacity and eligibility; respects account-wide unavailability/overlap.
+- **What:** Atomic RPC that fills an open Event spot **within a team** for the first eligible claimant (must satisfy Event Requirements, availability, overlap, capacity).
 - **Why:** Prevents two people claiming the same spot.
-- **Done when:** Simultaneous taps never exceed shift capacity.
+- **Done when:** Simultaneous taps never exceed event capacity.
 
 ### 3.2 Subscription webhook (Stripe or Paddle)
 
@@ -222,15 +229,21 @@ _Last updated: 27 Aug 2025_
 
 ### 3.3 Notification sender (push/email queue)
 
-- **What:** Create and deliver notifications (assignment, reminders, replacement offers/claims) with **team context**.
+- **What:** Create and deliver notifications (assignment, reminders, replacement offers/claims, **swap events**) with **team context**.
 - **Why:** Keeps people informed without manual texts.
 - **Done when:** Trigger → queued → delivered to device/inbox with basic logging.
 
 ### 3.4 Auto-scheduler Edge Function (preview/apply/undo)
 
-- **What:** Given a **team**, date range (and optional roles), propose assignments (preview), apply them transactionally with an **advisory lock per `(account_id, team_id)`**, and support undo via run logs.
+- **What:** Given a **team**, date range (and optional filters), propose assignments (preview), apply them transactionally with an **advisory lock per `(account_id, team_id)`**, and support undo via run logs.
 - **Why:** Deterministic, auditable, race-safe automation that respects guardrails.
 - **Done when:** Preview returns valid proposals; apply writes assignments without violations; undo removes exactly what the run added.
+
+### 3.5 Swap assignments flow (request/accept/approve/apply/cancel/expire)
+
+- **What:** RPC/Edge Function set for **peer swaps**: create request (same Event), accept/decline, optional scheduler approval (per team policy), **atomic exchange of `assignments.user_id`**, cancel/expire handling.
+- **Why:** Lets teams self-manage swaps safely without breaking guardrails.
+- **Done when:** Valid swaps apply; invalid ones are rejected with clear errors; audit and notifications recorded.
 
 ---
 
@@ -238,7 +251,7 @@ _Last updated: 27 Aug 2025_
 
 ### 4.1 Generate TypeScript types from the database
 
-- **What:** Codegen DB types for strong typing in clients (including team-scoped tables).
+- **What:** Codegen DB types for strong typing in clients (including Events, Requirements).
 - **Why:** Fewer bugs when reading/writing data.
 - **Done when:** Both apps import and use the generated types.
 
@@ -252,7 +265,7 @@ _Last updated: 27 Aug 2025_
 
 - **What:** Utilities to store UTC and render in the user’s timezone.
 - **Why:** Prevents “my roster shows the wrong time” issues.
-- **Done when:** The same shift shows correct local times on every device.
+- **Done when:** The same event shows correct local times on every device.
 
 ---
 
@@ -280,7 +293,7 @@ _Last updated: 27 Aug 2025_
 
 - **What:** Calendar/list showing the user’s assignments with filters (All, by Account, by Team).
 - **Why:** Core value for volunteers and staff.
-- **Done when:** Upcoming shifts render with key details and filters work.
+- **Done when:** Upcoming events render with key details and filters work.
 
 ### 5.5 Add Unavailability (create/edit/delete)
 
@@ -290,13 +303,19 @@ _Last updated: 27 Aug 2025_
 
 ### 5.6 Add replacement request & claim
 
-- **What:** “Can’t make it” → opens a claimable slot; eligible peers in the **same team** can accept.
-- **Why:** Swaps happen without phone tag.
+- **What:** “Can’t make it” → opens a claimable spot; eligible peers in the **same team** can accept (must satisfy Event Requirements).
+- **Why:** Coverage without phone tag.
 - **Done when:** End-to-end flow updates assignment correctly.
 
-### 5.7 Enable push notifications (Expo)
+### 5.7 Add peer-to-peer swaps (propose/accept; optional approval)
 
-- **What:** Save device tokens; deliver assignment/reminder/offer alerts (team-aware).
+- **What:** From team roster, tap an assigned peer on the **same future Event** → **Propose Swap**; recipient Accept/Decline; if team requires approval, scheduler approves before apply.
+- **Why:** Real-world church/team workflow.
+- **Done when:** Valid swaps apply; invalid attempts are prevented with clear messages.
+
+### 5.8 Enable push notifications (Expo)
+
+- **What:** Save device tokens; deliver assignment/reminder/offer alerts (team-aware) and **swap** notifications.
 - **Why:** Users get timely updates.
 - **Done when:** Devices receive test and real notifications.
 
@@ -316,21 +335,33 @@ _Last updated: 27 Aug 2025_
 - **Why:** Consistency; less code.
 - **Done when:** You can log in and switch account context.
 
-### 6.3 Build the roster console
+### 6.3 Build the team roster console (Requirements-aware)
 
-- **What:** **Team-scoped** grid/calendar to manage Roles, Schedule Templates, Shifts, Assignments, Eligibility, and the **Teams management** page (create/rename/archive teams).
+- **What:** **Team-scoped** grid/calendar to manage **Requirements**, **Event Templates**, generated **Events**, Assignments; “Assign” candidates filtered by **Event Requirements**; quick actions for Replacement/Swap.
 - **Why:** This is where schedulers live daily.
-- **Done when:** You can manage teams, generate shifts, and assign smoothly with conflict checks.
+- **Done when:** You can manage requirements, generate events, and assign smoothly with conflict checks.
 
-### 6.4 Package for Microsoft Store (PWABuilder → MSIX) & test install
+### 6.4 Team settings: allow_swaps, roster_visibility
+
+- **What:** UI to toggle **Allow swaps** and set **Roster visibility** (`team`, `account`, `private`) per team.
+- **Why:** Churches vs workplaces need different policies.
+- **Done when:** Settings persist and affect UI/permissions immediately.
+
+### 6.5 Swap approvals queue (if policy requires)
+
+- **What:** A list in the console for schedulers to approve/decline pending swaps when **approval required** is on.
+- **Why:** Control without blocking teams that don’t need it.
+- **Done when:** Approvals apply swaps atomically; audit and notifications are written.
+
+### 6.6 Package for Microsoft Store (PWABuilder → MSIX) & test install
 
 - **What:** Use PWABuilder to create MSIX; submit via Microsoft Partner Center.
 - **Why:** Discoverability and easy install/updates on Windows.
 - **Done when:** Store package installs and updates flow from web deploys.
 
-### 6.5 Auto-schedule UI (preview → apply → undo)
+### 6.7 Auto-schedule UI (preview → apply → undo)
 
-- **What:** Panel (within a **Team**) to choose date range/roles/rules, show proposed assignments, accept/skip, apply, and undo last run.
+- **What:** Panel (within a **Team**) to choose date range/filters/rules, show proposed assignments, accept/skip, apply, and undo last run.
 - **Why:** Gives schedulers fast, safe automation with control.
 - **Done when:** Preview, apply, and undo work end-to-end; a badge shows “X auto-scheduled”.
 
@@ -344,17 +375,23 @@ _Last updated: 27 Aug 2025_
 - **Why:** Eliminates human error.
 - **Done when:** Overlaps are rejected with a clear message.
 
-### 7.2 Enforce shift capacity
+### 7.2 Enforce event capacity
 
 - **What:** UI and server checks; replacement claim function enforces capacity atomically.
 - **Why:** Keeps rosters tidy and accurate.
 - **Done when:** System refuses over-capacity assignments.
 
-### 7.3 Enforce eligibility everywhere
+### 7.3 Enforce Requirements everywhere
 
-- **What:** Only eligible users for a role (within that **team**) can be assigned; validate in UI and DB.
-- **Why:** Safety and quality.
-- **Done when:** Ineligible assignments are impossible.
+- **What:** Require `(User Requirements) ⊇ (Event Requirements)` (or ANY_OF) for manual assign, replacement, swaps, and auto-schedule.
+- **Why:** Safety and fit-for-role.
+- **Done when:** Non-matching users never appear in candidates and cannot be assigned.
+
+### 7.4 Enforce swap policy & audit
+
+- **What:** Respect **allow_swaps** and **roster_visibility**; swaps only for the same Event; write to `audit_log`.
+- **Why:** Governance and traceability.
+- **Done when:** Violations are blocked; audits show who did what and when.
 
 ---
 
@@ -390,7 +427,7 @@ _Last updated: 27 Aug 2025_
 
 ### 9.1 End-to-end tests for critical flows
 
-- **What:** Automated flows for sign-in, assign, replace, notifications (including team context).
+- **What:** Automated flows for sign-in, assign, replacement, **swap**, notifications (including team context).
 - **Why:** Prevent regressions before release.
 - **Done when:** Tests run locally and in CI with consistent pass.
 
@@ -402,7 +439,7 @@ _Last updated: 27 Aug 2025_
 
 ### 9.3 Product analytics (minimal)
 
-- **What:** Track key events (sign-in, create team, create role, create template, assignment, replacement claim, auto-schedule apply).
+- **What:** Track key events (sign_in, create_team, create_requirement, grant_user_requirement, create_event_template, generate_events, assignment_created, replacement_opened/claimed/filled, swap_requested/accepted/applied, autoschedule_preview/applied/undo).
 - **Why:** Understand adoption and friction points.
 - **Done when:** Events stream into analytics with basic dashboards.
 
@@ -430,7 +467,7 @@ _Last updated: 27 Aug 2025_
 
 ### 10.3 First-run onboarding
 
-- **What:** Guided flow: create account → create team(s) → invite people → set eligibility → create role → template → generate shifts → assign.
+- **What:** Guided flow: create account → create team(s) → define requirements → invite people → grant user requirements → create event template → generate events → assign → (optional) explain swaps.
 - **Why:** Time-to-value in minutes.
 - **Done when:** A new user completes onboarding without help.
 
@@ -464,7 +501,7 @@ _Last updated: 27 Aug 2025_
 
 ### 11.4 Bulk import
 
-- **What:** CSV upload for members and eligibility.
+- **What:** CSV upload for members and requirements.
 - **Why:** Fast onboarding of large groups.
 - **Done when:** Valid CSVs import with clear error handling.
 
