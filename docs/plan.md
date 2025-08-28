@@ -22,8 +22,11 @@ _Last updated: 28 Aug 2025_
 
 ### Phase 2 — Supabase projects & database
 
-- [ ] [2.1 Create Supabase projects: dev, staging, prod](#21-create-supabase-projects-dev-staging-prod)
-- [ ] [2.2 Install Supabase CLI and link “dev”](#22-install-supabase-cli-and-link-dev)
+- [x] [2.1 Create Supabase projects: dev, staging, prod](#21-create-supabase-projects-dev-staging-prod)
+
+> Note: Only created Dev and Prod, Will add staging later to lower costs at early stage of project.
+
+- [x] [2.2 Install Supabase CLI and link “dev”](#22-install-supabase-cli-and-link-dev)
 - [ ] [2.3 Write v1 database schema (Teams, Events & Requirements, Swaps)](#23-write-v1-database-schema-teams-events--requirements-swaps)
 - [ ] [2.3a Add auto-scheduling tables (V1.1)](#23a-add-auto-scheduling-tables-v11)
 - [ ] [2.4 Add seed data](#24-add-seed-data)

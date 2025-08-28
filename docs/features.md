@@ -357,6 +357,22 @@ Include: `account_id`, `team_id`, `user_id` (when applicable).
 - External directory sync (Azure/Google)
 - Service-key clients (serverless only via Edge Functions)
 
+### Future add-on: **Servota InterGreat** (integration hub)
+
+_(intentionally spelt “InterGreat”)_
+
+**Idea:** a separate add-on that connects Servota to external platforms — think inbound/outbound webhooks plus lightweight connectors — so churches and support/workplace teams can keep using their CRM/ChMS but rely on Servota for field rostering.
+
+**Scope (high level, not MVP):**
+
+- **Webhook gateway (inbound):** receive events from other systems (e.g., new booking/case → create/update Event/Requirements/Assignments).
+- **Webhook dispatcher (outbound):** emit Servota events (assignment_created/changed, replacement_opened/claimed/filled, swap_requested/accepted/applied, unavailability_updated, event_created/updated).
+- **Mapping & transforms:** configurable field mapping, basic validation, retry with backoff.
+- **Auth & connectors:** per-integration credentials/tokens; start with generic webhooks/Zapier-style patterns, grow to specific connectors later.
+- **Isolation:** runs as a separate service/module to keep the core app simple and church-first.
+
+**Why here:** captured under “parked” to avoid MVP scope creep while preserving the vision for broader industry use.
+
 ---
 
 ## 23) Open questions to track
