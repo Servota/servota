@@ -17,9 +17,9 @@ Define flexible **Requirements** (e.g., Communion Leader, WWCC), create **Event 
 
 ## Docs
 
-- [Details (architecture, data model, UX)](./details.md)
-- [Step-by-Step Plan](./plan.md)
-- [Feature Reference](./features.md)
+- [Details (architecture, data model, UX)](./docs/details.md)
+- [Step-by-Step Plan](./docs/plan.md)
+- [Feature Reference](./docs/features.md)
 - [Privacy & Data Retention](./docs/privacy.md)
 
 ## Monorepo (pnpm workspaces)
