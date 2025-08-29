@@ -27,8 +27,11 @@ _Last updated: 28 Aug 2025_
 > Note: Only created Dev and Prod, Will add staging later to lower costs at early stage of project.
 
 - [x] [2.2 Install Supabase CLI and link “dev”](#22-install-supabase-cli-and-link-dev)
-- [ ] [2.3 Write v1 database schema (Teams, Events & Requirements, Swaps)](#23-write-v1-database-schema-teams-events--requirements-swaps)
+- [x] [2.3 Write v1 database schema (Teams, Events & Requirements, Swaps)](#23-write-v1-database-schema-teams-events--requirements-swaps)
 - [ ] [2.3a Add auto-scheduling tables (V1.1)](#23a-add-auto-scheduling-tables-v11)
+
+> Note: Will skip 2.3a for now and come back to it later.
+
 - [ ] [2.4 Add seed data](#24-add-seed-data)
 - [ ] [2.5 Turn on Row Level Security (RLS) and add policies](#25-turn-on-row-level-security-rls-and-add-policies)
 - [ ] [2.6 Test RLS with simple automated checks](#26-test-rls-with-simple-automated-checks)
