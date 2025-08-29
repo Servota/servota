@@ -33,7 +33,7 @@ _Last updated: 28 Aug 2025_
 > Note: Will skip 2.3a for now and come back to it later.
 
 - [x] [2.4 Add seed data](#24-add-seed-data)
-- [ ] [2.5 Turn on Row Level Security (RLS) and add policies](#25-turn-on-row-level-security-rls-and-add-policies)
+- [x] [2.5 Turn on Row Level Security (RLS) and add policies](#25-turn-on-row-level-security-rls-and-add-policies)
 - [ ] [2.6 Test RLS with simple automated checks](#26-test-rls-with-simple-automated-checks)
 
 ### Phase 3 — Server functions
