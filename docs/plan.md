@@ -39,7 +39,7 @@ _Last updated: 28 Aug 2025_
 ### Phase 3 — Server functions
 
 - [x] [3.1 Replacement claim function (first-come-first-served)](#31-replacement-claim-function-first-come-first-served)
-- [ ] [3.2 Subscription webhook (Stripe or Paddle)](#32-subscription-webhook-stripe-or-paddle)
+- [x] [3.2 Subscription webhook (Stripe or Paddle)](#32-subscription-webhook-stripe-or-paddle)
 - [ ] [3.3 Notification sender (push/email queue)](#33-notification-sender-pushemail-queue)
 - [ ] [3.4 Auto-scheduler Edge Function (preview/apply/undo)](#34-auto-scheduler-edge-function-previewapplyundo)
 - [ ] [3.5 Swap assignments flow (request/accept/approve/apply/cancel/expire)](#35-swap-assignments-flow-requestacceptapproveapplycancelexpire)
