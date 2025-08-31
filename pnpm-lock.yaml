@@ -49,6 +49,9 @@ importers:
       '@expo/metro-runtime':
         specifier: ~5.0.4
         version: 5.0.4(react-native@0.79.6(@babel/core@7.28.3)(@types/react@19.0.14)(react@19.0.0))
+      '@servota/shared':
+        specifier: workspace:^
+        version: link:../../packages/shared
       expo:
         specifier: ~53.0.22
         version: 53.0.22(@babel/core@7.28.3)(@expo/metro-runtime@5.0.4(react-native@0.79.6(@babel/core@7.28.3)(@types/react@19.0.14)(react@19.0.0)))(react-native@0.79.6(@babel/core@7.28.3)(@types/react@19.0.14)(react@19.0.0))(react@19.0.0)
