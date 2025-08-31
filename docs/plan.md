@@ -49,9 +49,9 @@ _Last updated: 28 Aug 2025_
 
 ### Phase 4 — Shared client core
 
-- [ ] [4.1 Generate TypeScript types from the database](#41-generate-typescript-types-from-the-database)
-- [ ] [4.2 Build a shared Supabase client wrapper](#42-build-a-shared-supabase-client-wrapper)
-- [ ] [4.3 Add date/time helpers (UTC storage, user-timezone display)](#43-add-datetime-helpers-utc-storage-user-timezone-display)
+- [x] [4.1 Generate TypeScript types from the database](#41-generate-typescript-types-from-the-database)
+- [x] [4.2 Build a shared Supabase client wrapper](#42-build-a-shared-supabase-client-wrapper)
+- [x] [4.3 Add date/time helpers (UTC storage, user-timezone display)](#43-add-datetime-helpers-utc-storage-user-timezone-display)
 
 ### Phase 5 — Mobile app (Expo)
 
