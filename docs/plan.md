@@ -45,7 +45,7 @@ _Last updated: 28 Aug 2025_
 
 > Note: Will skip 3.4 until 2.3a is complete
 
-- [ ] [3.5 Swap assignments flow (request/accept/approve/apply/cancel/expire)](#35-swap-assignments-flow-requestacceptapproveapplycancelexpire)
+- [x] [3.5 Swap assignments flow (request/accept/approve/apply/cancel/expire)](#35-swap-assignments-flow-requestacceptapproveapplycancelexpire)
 
 ### Phase 4 — Shared client core
 
