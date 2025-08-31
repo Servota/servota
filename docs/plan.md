@@ -55,7 +55,7 @@ _Last updated: 28 Aug 2025_
 
 ### Phase 5 — Mobile app (Expo)
 
-- [ ] [5.1 Create the Expo project and run it](#51-create-the-expo-project-and-run-it)
+- [x] [5.1 Create the Expo project and run it](#51-create-the-expo-project-and-run-it)
 - [ ] [5.2 Add sign-in/out with Supabase Auth](#52-add-sign-inout-with-supabase-auth)
 - [ ] [5.3 Add account & team switchers and membership display](#53-add-account--team-switchers-and-membership-display)
 - [ ] [5.4 Build “My Roster” (list and/or month view)](#54-build-my-roster-list-andor-month-view)
