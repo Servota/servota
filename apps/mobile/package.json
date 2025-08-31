@@ -1,10 +1,25 @@
 {
-  "name": "@servota/mobile",
-  "version": "0.1.0",
-  "private": true,
+  "name": "mobile-new",
+  "version": "1.0.0",
+  "main": "index.ts",
   "scripts": {
-    "start": "echo \"Expo setup arrives in Phase 5\"",
-    "build": "node -e \"console.log('mobile build deferred to Phase 5')\"",
-    "typecheck": "echo \"(mobile typecheck added in Phase 5)\""
-  }
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~5.0.4",
+    "expo": "~53.0.22",
+    "expo-status-bar": "~2.2.3",
+    "react": "19.0.0",
+    "react-native": "0.79.6",
+    "react-native-web": "^0.20.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@types/react": "~19.0.10",
+    "typescript": "~5.8.3"
+  },
+  "private": true
 }
