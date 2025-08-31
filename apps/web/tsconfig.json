@@ -3,9 +3,12 @@
   "include": ["src", "vite.config.ts"],
   "compilerOptions": {
     "types": ["vite/client"],
+    "baseUrl": ".",
     "paths": {
       "@servota/ui": ["../../packages/ui/src"],
-      "@servota/shared": ["../../packages/shared/src"]
+      "@servota/ui/*": ["../../packages/ui/src/*"],
+      "@servota/shared": ["../../packages/shared/src"],
+      "@servota/shared/*": ["../../packages/shared/src/*"]
     }
   }
 }
