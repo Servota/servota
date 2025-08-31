@@ -11,14 +11,16 @@ export default [
   // Files/folders to ignore (replaces .eslintignore)
   {
     ignores: [
-      'node_modules/**',
-      '**/dist/**',
-      '**/build/**',
-      '.pnpm-store/**',
-      'supabase/.temp/**',
-      'apps/web/public/**',
-      '**/*.d.ts'
-    ],
+  'node_modules/**',
+  '**/dist/**',
+  '**/build/**',
+  '.pnpm-store/**',
+  'supabase/.temp/**',
+  'apps/web/public/**',
+  '**/*.d.ts',
+  'packages/shared/src/types/supabase.ts'
+],
+
   },
 
   // Base JS recommended rules
