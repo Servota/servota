@@ -92,7 +92,7 @@ export function CurrentProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<Ctx>(
     () => ({ accountId, accountName, teamId, teamName, setAccount, setTeam, clear, ready }),
-    [accountId, accountName, teamId, teamName, ready]
+    [accountId, accountName, teamId, teamName, setAccount, setTeam, clear, ready]
   );
 
   return <CurrentContext.Provider value={value}>{children}</CurrentContext.Provider>;
