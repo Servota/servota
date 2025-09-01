@@ -1,6 +1,6 @@
 // apps/mobile/src/features/switchers/Switchers.tsx
 import React, { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, ActivityIndicator, Pressable, StyleSheet } from 'react-native';
 import {
   getMyAccountMemberships,
   getMyTeamMemberships,
@@ -10,7 +10,7 @@ import {
 import { useCurrent } from '../../context/CurrentContext';
 
 export default function Switchers() {
-  const { accountId, teamId, setAccount, setTeam } = useCurrent();
+  const { accountId, teamId, setAccount, setTeam, clear } = useCurrent();
 
   const [accounts, setAccounts] = useState<AccountMembership[] | null>(null);
   const [accountErr, setAccountErr] = useState<string | null>(null);
@@ -19,7 +19,7 @@ export default function Switchers() {
   const [teams, setTeams] = useState<TeamMembership[] | null>(null);
   const [teamErr, setTeamErr] = useState<string | null>(null);
 
-  // Load accounts (respect persisted accountId)
+  // Load accounts (respect persisted accountId; don't auto-select if none)
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -28,16 +28,15 @@ export default function Switchers() {
         if (!mounted) return;
         setAccounts(rows);
 
-        if (rows.length) {
-          const byPersisted = rows.find((r) => r.account_id === accountId);
-          setSelectedAccount(byPersisted ?? rows[0]);
-          if (byPersisted) {
-            // ensure context reflects latest name
+        if (rows.length && accountId) {
+          const byPersisted = rows.find((r) => r.account_id === accountId) ?? null;
+          setSelectedAccount(byPersisted);
+          if (byPersisted && accountId !== byPersisted.account_id) {
             setAccount(byPersisted.account_id, byPersisted.account_name);
           }
         } else {
           setSelectedAccount(null);
-          setTeams([]); // avoid spinner when there are no accounts
+          setTeams([]); // avoid spinner when there are no accounts selected
         }
       } catch (e: any) {
         if (!mounted) return;
@@ -47,7 +46,6 @@ export default function Switchers() {
     return () => {
       mounted = false;
     };
-    // Include accountId & setAccount to satisfy exhaustive-deps
   }, [accountId, setAccount]);
 
   // Load teams when account changes
@@ -71,12 +69,11 @@ export default function Switchers() {
     return () => {
       mounted = false;
     };
-    // Depend on the object to satisfy exhaustive-deps
   }, [selectedAccount]);
 
   return (
-    <ScrollView contentContainerStyle={styles.wrap}>
-      <Text style={styles.h1}>Your Accounts</Text>
+    <View style={styles.wrap}>
+      <Text style={styles.h1}>Filter</Text>
 
       {accountErr ? <Text style={styles.err}>{accountErr}</Text> : null}
       {accounts === null ? (
@@ -85,14 +82,22 @@ export default function Switchers() {
         <Text style={styles.muted}>No account memberships found.</Text>
       ) : (
         <View style={styles.list}>
+          <Text style={styles.h2}>Accounts</Text>
           {accounts.map((a) => {
             const active = selectedAccount?.account_id === a.account_id;
             return (
               <Pressable
                 key={a.account_id}
                 onPress={() => {
-                  setSelectedAccount(a);
-                  setAccount(a.account_id, a.account_name); // persist selection
+                  if (active) {
+                    // Toggle off account selection (also clears team)
+                    clear();
+                    setSelectedAccount(null);
+                    setTeams([]);
+                  } else {
+                    setSelectedAccount(a);
+                    setAccount(a.account_id, a.account_name); // persist selection
+                  }
                 }}
                 style={[styles.item, active && styles.itemActive]}
               >
@@ -104,7 +109,7 @@ export default function Switchers() {
         </View>
       )}
 
-      <Text style={[styles.h1, { marginTop: 16 }]}>
+      <Text style={[styles.h2, { marginTop: 12 }]}>
         {selectedAccount ? `Teams in ${selectedAccount.account_name}` : 'Teams'}
       </Text>
 
@@ -124,7 +129,14 @@ export default function Switchers() {
             return (
               <Pressable
                 key={t.team_id}
-                onPress={() => setTeam(t.team_id, t.team_name)} // persist selection
+                onPress={() => {
+                  if (active) {
+                    // Toggle off team selection (keep account filter)
+                    setTeam('', '');
+                  } else {
+                    setTeam(t.team_id, t.team_name); // persist selection
+                  }
+                }}
                 style={[styles.item, active && styles.itemActive]}
               >
                 <Text style={styles.itemTitle}>{t.team_name}</Text>
@@ -134,13 +146,14 @@ export default function Switchers() {
           })}
         </View>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { padding: 16, gap: 12 },
+  wrap: { gap: 8 },
   h1: { fontSize: 18, fontWeight: '700' },
+  h2: { fontSize: 14, fontWeight: '700' },
   list: { gap: 8 },
   item: {
     padding: 12,

@@ -56,25 +56,29 @@ export function CurrentProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setAccount = (id: string, name: string) => {
+    const changed = accountId !== id; // only clear team if account actually changed
     setAccountId(id);
     setAccountName(name);
-    // Clear team when account changes
-    setTeamId(null);
-    setTeamName(null);
     AsyncStorage.multiSet([
       [KEYS.accountId, id],
       [KEYS.accountName, name],
-      [KEYS.teamId, ''],
-      [KEYS.teamName, ''],
     ]).catch(() => {});
+    if (changed) {
+      setTeamId(null);
+      setTeamName(null);
+      AsyncStorage.multiSet([
+        [KEYS.teamId, ''],
+        [KEYS.teamName, ''],
+      ]).catch(() => {});
+    }
   };
 
   const setTeam = (id: string, name: string) => {
-    setTeamId(id);
-    setTeamName(name);
+    setTeamId(id || null);
+    setTeamName(name || null);
     AsyncStorage.multiSet([
-      [KEYS.teamId, id],
-      [KEYS.teamName, name],
+      [KEYS.teamId, id || ''],
+      [KEYS.teamName, name || ''],
     ]).catch(() => {});
   };
 
