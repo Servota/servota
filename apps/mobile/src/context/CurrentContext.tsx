@@ -1,6 +1,6 @@
 /* eslint-disable no-unused-vars */
 // apps/mobile/src/context/CurrentContext.tsx
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Ctx = {
@@ -55,40 +55,44 @@ export function CurrentProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const setAccount = (id: string, name: string) => {
-    const changed = accountId !== id; // only clear team if account actually changed
-    setAccountId(id);
-    setAccountName(name);
-    AsyncStorage.multiSet([
-      [KEYS.accountId, id],
-      [KEYS.accountName, name],
-    ]).catch(() => {});
-    if (changed) {
-      setTeamId(null);
-      setTeamName(null);
+  // Only clear team if the account actually changes
+  const setAccount = useCallback(
+    (id: string, name: string) => {
+      const changed = accountId !== id;
+      setAccountId(id);
+      setAccountName(name);
       AsyncStorage.multiSet([
-        [KEYS.teamId, ''],
-        [KEYS.teamName, ''],
+        [KEYS.accountId, id],
+        [KEYS.accountName, name],
       ]).catch(() => {});
-    }
-  };
+      if (changed) {
+        setTeamId(null);
+        setTeamName(null);
+        AsyncStorage.multiSet([
+          [KEYS.teamId, ''],
+          [KEYS.teamName, ''],
+        ]).catch(() => {});
+      }
+    },
+    [accountId]
+  );
 
-  const setTeam = (id: string, name: string) => {
+  const setTeam = useCallback((id: string, name: string) => {
     setTeamId(id || null);
     setTeamName(name || null);
     AsyncStorage.multiSet([
       [KEYS.teamId, id || ''],
       [KEYS.teamName, name || ''],
     ]).catch(() => {});
-  };
+  }, []);
 
-  const clear = () => {
+  const clear = useCallback(() => {
     setAccountId(null);
     setAccountName(null);
     setTeamId(null);
     setTeamName(null);
     AsyncStorage.multiRemove(Object.values(KEYS)).catch(() => {});
-  };
+  }, []);
 
   const value = useMemo<Ctx>(
     () => ({ accountId, accountName, teamId, teamName, setAccount, setTeam, clear, ready }),
