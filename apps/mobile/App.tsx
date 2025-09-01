@@ -1,8 +1,19 @@
 // apps/mobile/App.tsx
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, Button, ActivityIndicator, Alert, StyleSheet } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  Button,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  ScrollView,
+} from 'react-native';
 import { supabase } from './src/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
+import Switchers from './src/features/switchers/Switchers';
+import { CurrentProvider } from './src/context/CurrentContext';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -25,25 +36,25 @@ export default function App() {
     };
   }, []);
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-        <Text style={styles.muted}>Loading…</Text>
-      </View>
-    );
-  }
-
-  return session ? (
-    <AuthedView
-      email={session.user.email ?? ''}
-      onSignOut={async () => {
-        const { error } = await supabase.auth.signOut();
-        if (error) Alert.alert('Sign out failed', error.message);
-      }}
-    />
-  ) : (
-    <SignInView />
+  return (
+    <CurrentProvider>
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator />
+          <Text style={styles.muted}>Loading…</Text>
+        </View>
+      ) : session ? (
+        <AuthedView
+          email={session.user.email ?? ''}
+          onSignOut={async () => {
+            const { error } = await supabase.auth.signOut();
+            if (error) Alert.alert('Sign out failed', error.message);
+          }}
+        />
+      ) : (
+        <SignInView />
+      )}
+    </CurrentProvider>
   );
 }
 
@@ -114,11 +125,13 @@ function SignInView() {
 
 function AuthedView({ email, onSignOut }: { email: string; onSignOut: () => Promise<void> }) {
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <Text style={styles.title}>You're signed in</Text>
       <Text style={styles.subtitle}>{email}</Text>
       <Button title="Sign out" onPress={onSignOut} />
-    </View>
+      <View style={{ height: 8 }} />
+      <Switchers />
+    </ScrollView>
   );
 }
 

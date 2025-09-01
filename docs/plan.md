@@ -57,7 +57,7 @@ _Last updated: 28 Aug 2025_
 
 - [x] [5.1 Create the Expo project and run it](#51-create-the-expo-project-and-run-it)
 - [x] [5.2 Add sign-in/out with Supabase Auth](#52-add-sign-inout-with-supabase-auth)
-- [ ] [5.3 Add account & team switchers and membership display](#53-add-account--team-switchers-and-membership-display)
+- [x] [5.3 Add account & team switchers and membership display](#53-add-account--team-switchers-and-membership-display)
 - [ ] [5.4 Build “My Roster” (list and/or month view)](#54-build-my-roster-list-andor-month-view)
 - [ ] [5.5 Add Unavailability (create/edit/delete)](#55-add-unavailability-createeditdelete)
 - [ ] [5.6 Add replacement request & claim](#56-add-replacement-request--claim)
