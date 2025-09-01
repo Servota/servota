@@ -1,18 +1,9 @@
 // apps/mobile/App.tsx
 import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  Button,
-  ActivityIndicator,
-  Alert,
-  StyleSheet,
-  ScrollView,
-} from 'react-native';
+import { View, Text, TextInput, Button, ActivityIndicator, Alert, StyleSheet } from 'react-native';
 import { supabase } from './src/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
-import Switchers from './src/features/switchers/Switchers';
+import MyRoster from './src/features/roster/MyRoster';
 import { CurrentProvider } from './src/context/CurrentContext';
 
 export default function App() {
@@ -125,13 +116,14 @@ function SignInView() {
 
 function AuthedView({ email, onSignOut }: { email: string; onSignOut: () => Promise<void> }) {
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <Text style={styles.title}>You're signed in</Text>
-      <Text style={styles.subtitle}>{email}</Text>
-      <Button title="Sign out" onPress={onSignOut} />
-      <View style={{ height: 8 }} />
-      <Switchers />
-    </ScrollView>
+    <View style={{ flex: 1, paddingTop: 16 }}>
+      <View style={{ paddingHorizontal: 16, gap: 6, marginBottom: 8 }}>
+        <Text style={styles.title}>You're signed in</Text>
+        <Text style={styles.subtitle}>{email}</Text>
+        <Button title="Sign out" onPress={onSignOut} />
+      </View>
+      <MyRoster />
+    </View>
   );
 }
 
