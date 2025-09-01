@@ -19,7 +19,7 @@ export default function Switchers() {
   const [teams, setTeams] = useState<TeamMembership[] | null>(null);
   const [teamErr, setTeamErr] = useState<string | null>(null);
 
-  // Load accounts on mount
+  // Load accounts (respect persisted accountId)
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -28,12 +28,11 @@ export default function Switchers() {
         if (!mounted) return;
         setAccounts(rows);
 
-        // Prefer persisted accountId if available
         if (rows.length) {
           const byPersisted = rows.find((r) => r.account_id === accountId);
           setSelectedAccount(byPersisted ?? rows[0]);
           if (byPersisted) {
-            // ensure context is set (name might have changed)
+            // ensure context reflects latest name
             setAccount(byPersisted.account_id, byPersisted.account_name);
           }
         } else {
@@ -48,7 +47,8 @@ export default function Switchers() {
     return () => {
       mounted = false;
     };
-  }, []);
+    // Include accountId & setAccount to satisfy exhaustive-deps
+  }, [accountId, setAccount]);
 
   // Load teams when account changes
   useEffect(() => {
@@ -71,7 +71,8 @@ export default function Switchers() {
     return () => {
       mounted = false;
     };
-  }, [selectedAccount?.account_id]);
+    // Depend on the object to satisfy exhaustive-deps
+  }, [selectedAccount]);
 
   return (
     <ScrollView contentContainerStyle={styles.wrap}>
