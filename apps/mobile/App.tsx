@@ -11,14 +11,18 @@ import {
   SafeAreaView,
   Platform,
   StatusBar,
+  Pressable,
 } from 'react-native';
 import { supabase } from './src/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
 import { CurrentProvider, useCurrent } from './src/context/CurrentContext';
 import MyMemberships from './src/features/memberships/MyMemberships';
 import MyRoster from './src/features/roster/MyRoster';
+import MyUnavailability from './src/features/unavailability/MyUnavailability';
+import EventDetails, { type SelectedEvent } from './src/features/roster/EventDetails';
+import HomeAlerts from './src/features/home/HomeAlerts';
 
-type Screen = 'home' | 'memberships' | 'roster' | 'unavailability';
+type Screen = 'home' | 'memberships' | 'roster' | 'unavailability' | 'eventDetails';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -66,7 +70,13 @@ export default function App() {
 
 function AuthedApp({ email }: { email: string }) {
   const [screen, setScreen] = useState<Screen>('home');
+  const [selectedEvent, setSelectedEvent] = useState<SelectedEvent | null>(null);
   const { accountName, teamName } = useCurrent();
+
+  const back = () => {
+    if (screen === 'eventDetails') setScreen('roster');
+    else setScreen('home');
+  };
 
   return (
     <View style={{ flex: 1 }}>
@@ -81,7 +91,7 @@ function AuthedApp({ email }: { email: string }) {
               marginBottom: 6,
             }}
           >
-            <Button title="◀ Back" onPress={() => setScreen('home')} />
+            <Button title="◀ Back" onPress={back} />
             <Button
               title="Sign out"
               onPress={async () => {
@@ -113,30 +123,85 @@ function AuthedApp({ email }: { email: string }) {
 
       {/* Screens */}
       {screen === 'home' && (
-        <View style={{ paddingHorizontal: 16, gap: 12 }}>
-          <Button title="My Memberships" onPress={() => setScreen('memberships')} />
-          <Button title="My Roster" onPress={() => setScreen('roster')} />
-          <Button title="My Unavailability" onPress={() => setScreen('unavailability')} />
-          <Text style={[styles.mutedSmall, { marginTop: 8 }]}>
-            Tip: select an Account/Team in “My Memberships” to filter your roster.
+        <View style={{ flex: 1, paddingHorizontal: 20, gap: 12 }}>
+          {/* Logo / brand */}
+          <View style={{ alignItems: 'center', marginTop: 8, marginBottom: 6 }}>
+            <View style={styles.logoRow}>
+              <View style={styles.logoMark}>
+                <Text style={styles.logoPlus}>＋</Text>
+              </View>
+              <Text style={styles.logoText}>Servota</Text>
+            </View>
+            <Text style={[styles.muted, { marginTop: 8 }]}>
+              Welcome,{'\n'}
+              <Text style={{ fontWeight: '600', color: '#111' }}>{email}</Text>
+            </Text>
+          </View>
+
+          {/* Alerts banner */}
+          <HomeAlerts />
+
+          {/* Big action cards */}
+          <HomeCard icon="👤" label="Memberships" onPress={() => setScreen('memberships')} />
+          <HomeCard icon="👥" label="Roster" onPress={() => setScreen('roster')} />
+          <HomeCard icon="📅" label="Unavailability" onPress={() => setScreen('unavailability')} />
+
+          {/* Context hint */}
+          <Text style={[styles.mutedSmall, { textAlign: 'center', marginTop: 6 }]}>
+            {accountName ? `Selected: ${accountName}` : 'No account selected'}
+            {teamName ? ` → ${teamName}` : ''}
           </Text>
+
+          {/* Footer logout */}
+          <View style={{ flex: 1 }} />
+          <Pressable
+            onPress={async () => {
+              const { error } = await supabase.auth.signOut();
+              if (error) Alert.alert('Sign out failed', error.message);
+            }}
+            style={{ alignSelf: 'center', paddingVertical: 16 }}
+          >
+            <Text style={[styles.muted, { fontWeight: '600' }]}>Logout</Text>
+          </Pressable>
         </View>
       )}
 
       {screen === 'memberships' && <MyMemberships />}
 
-      {screen === 'roster' && <MyRoster />}
-
-      {screen === 'unavailability' && (
-        <View style={{ padding: 16, gap: 8 }}>
-          <Text style={styles.h1}>My Unavailability</Text>
-          <Text style={styles.muted}>
-            Placeholder screen. Next we’ll show your future unavailability (by selected Account) and
-            let you add/remove entries.
-          </Text>
-        </View>
+      {screen === 'roster' && (
+        <MyRoster
+          onOpenDetails={(a) => {
+            setSelectedEvent({
+              event_id: a.event_id,
+              template_id: a.template_id,
+              account_id: a.account_id,
+              team_id: a.team_id,
+              label: a.label,
+              starts_at: a.starts_at,
+              ends_at: a.ends_at,
+              account_name: a.account_name,
+              team_name: a.team_name,
+            });
+            setScreen('eventDetails');
+          }}
+        />
       )}
+
+      {screen === 'eventDetails' && selectedEvent && (
+        <EventDetails selected={selectedEvent} setSelected={setSelectedEvent} />
+      )}
+
+      {screen === 'unavailability' && <MyUnavailability />}
     </View>
+  );
+}
+
+function HomeCard({ icon, label, onPress }: { icon: string; label: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={styles.cardBtn}>
+      <Text style={styles.cardIcon}>{icon}</Text>
+      <Text style={styles.cardLabel}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -209,6 +274,20 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   container: { flex: 1, alignItems: 'stretch', justifyContent: 'center', padding: 20, gap: 12 },
+
+  // Branding
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  logoMark: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#3b82f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoPlus: { color: '#fff', fontSize: 22, fontWeight: '800', marginTop: -1 },
+  logoText: { fontSize: 28, fontWeight: '800', color: '#222' },
+
   title: { fontSize: 28, fontWeight: '700', textAlign: 'center' },
   subtitle: { fontSize: 16, textAlign: 'center', marginBottom: 8 },
   h1: { fontSize: 18, fontWeight: '700' },
@@ -218,4 +297,24 @@ const styles = StyleSheet.create({
   spacer: { width: 12 },
   muted: { color: '#666' },
   mutedSmall: { color: '#666', fontSize: 12, textAlign: 'center', marginTop: 16 },
+
+  // Home cards
+  cardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#ececec',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  cardIcon: { fontSize: 22 },
+  cardLabel: { fontSize: 18, fontWeight: '700', color: '#222' },
 });
