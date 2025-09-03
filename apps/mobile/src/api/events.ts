@@ -43,3 +43,29 @@ export async function getUpcomingEvents(opts: {
     ends_at: e.ends_at,
   }));
 }
+
+/** Upcoming events from the same template/series */
+export async function getUpcomingEventsByTemplate(
+  templateId: string,
+  limit = 20
+): Promise<EventRow[]> {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('events')
+    .select('id, account_id, team_id, label, starts_at, ends_at, template_id')
+    .eq('template_id', templateId)
+    .gte('starts_at', nowIso)
+    .order('starts_at', { ascending: true })
+    .limit(limit);
+
+  if (error) throw error;
+
+  return (data ?? []).map((e: any) => ({
+    event_id: e.id,
+    account_id: e.account_id,
+    team_id: e.team_id,
+    label: e.label ?? 'Event',
+    starts_at: e.starts_at,
+    ends_at: e.ends_at,
+  }));
+}

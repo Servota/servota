@@ -7,6 +7,7 @@ export type MyAssignment = {
   assignment_id: string;
   assignment_status: string | null;
   event_id: string;
+  template_id: string | null;
   account_id: string;
   account_name: string | null;
   team_id: string;
@@ -44,7 +45,8 @@ export async function getMyUpcomingAssignments(opts: {
         id,
         label,
         starts_at,
-        ends_at
+        ends_at,
+        template_id
       ),
       teams:team_id ( name ),
       accounts:account_id ( name )
@@ -65,6 +67,7 @@ export async function getMyUpcomingAssignments(opts: {
     assignment_id: row.id,
     assignment_status: row.status ?? null,
     event_id: row.event_id,
+    template_id: row.events?.template_id ?? null,
     account_id: row.account_id,
     account_name: row.accounts?.name ?? null,
     team_id: row.team_id,

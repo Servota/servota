@@ -10,40 +10,32 @@ import {
   RefreshControl,
   Pressable,
   Modal,
-  Alert,
 } from 'react-native';
 import {
   getMyUpcomingAssignments,
   type MyAssignment,
   type Scope as RosterScope,
 } from '../../api/roster';
-import { getUpcomingEvents, type EventRow, type Scope as EventsScope } from '../../api/events';
 import {
   getMyAccountMemberships,
   getMyTeamMemberships,
   type AccountMembership,
   type TeamMembership,
 } from '../../api/memberships';
-import { openReplacementRequest } from '../../api/replacements';
 import { useCurrent } from '../../context/CurrentContext';
 
-export default function MyRoster() {
+export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssignment) => void }) {
   const { accountId, accountName, teamId, teamName, setAccount, setTeam, clear } = useCurrent();
 
-  // UI state
-  const [onlyMine, setOnlyMine] = useState(true);
-  const [itemsMine, setItemsMine] = useState<MyAssignment[] | null>(null);
-  const [itemsAll, setItemsAll] = useState<EventRow[] | null>(null);
+  const [items, setItems] = useState<MyAssignment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Picker data (local)
   const [accounts, setAccounts] = useState<AccountMembership[] | null>(null);
   const [teams, setTeams] = useState<TeamMembership[] | null>(null);
   const [pickAccountOpen, setPickAccountOpen] = useState(false);
   const [pickTeamOpen, setPickTeamOpen] = useState(false);
 
-  // load accounts (once)
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -61,7 +53,6 @@ export default function MyRoster() {
     };
   }, []);
 
-  // load teams whenever account changes
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -83,7 +74,7 @@ export default function MyRoster() {
     };
   }, [accountId]);
 
-  const scope: RosterScope | EventsScope = useMemo(
+  const scope: RosterScope = useMemo(
     () => (teamId ? 'team' : accountId ? 'account' : 'all'),
     [accountId, teamId]
   );
@@ -92,35 +83,18 @@ export default function MyRoster() {
     setError(null);
     setRefreshing(true);
     try {
-      if (onlyMine) {
-        const mine = await getMyUpcomingAssignments({
-          scope: scope as RosterScope,
-          accountId,
-          teamId,
-          limit: 100,
-        });
-        setItemsMine(mine);
-      } else {
-        const all = await getUpcomingEvents({
-          scope: scope as EventsScope,
-          accountId,
-          teamId,
-          limit: 100,
-        });
-        setItemsAll(all);
-      }
+      const mine = await getMyUpcomingAssignments({ scope, accountId, teamId, limit: 100 });
+      setItems(mine);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load roster');
-      setItemsMine([]);
-      setItemsAll([]);
+      setItems([]);
     } finally {
       setRefreshing(false);
     }
-  }, [onlyMine, scope, accountId, teamId]);
+  }, [scope, accountId, teamId]);
 
   useEffect(() => {
-    setItemsMine(null);
-    setItemsAll(null);
+    setItems(null);
     load();
   }, [load]);
 
@@ -131,51 +105,21 @@ export default function MyRoster() {
       day: d.getDate().toString().padStart(2, '0'),
     };
   };
-  const fmtTimeRange = (startIso: string, endIso: string) => {
-    const s = new Date(startIso);
-    const e = new Date(endIso);
+  const fmtTimeRange = (sIso: string, eIso: string) => {
+    const s = new Date(sIso),
+      e = new Date(eIso);
     const day = s.toLocaleDateString(undefined, { weekday: 'short' });
     const hhmm = (d: Date) =>
       d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(' ', '');
     return `${day} ${hhmm(s)} – ${hhmm(e)}`;
   };
 
-  // Open replacement for an assignment
-  const handleOpenReplacement = async (a: MyAssignment) => {
-    const ok = await new Promise<boolean>((resolve) => {
-      Alert.alert(
-        "Can't make it?",
-        `Open a replacement request for "${a.label}"?\n\nThis will notify eligible teammates.`,
-        [
-          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-          { text: 'Open request', style: 'destructive', onPress: () => resolve(true) },
-        ]
-      );
-    });
-    if (!ok) return;
-
-    try {
-      setRefreshing(true);
-      await openReplacementRequest({
-        accountId: a.account_id,
-        teamId: a.team_id,
-        eventId: a.event_id,
-      });
-      Alert.alert('Replacement opened', 'We’ll notify eligible teammates.');
-    } catch (e: any) {
-      Alert.alert('Could not open replacement', e?.message ?? 'Please try again.');
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
   const Header = () => (
     <View style={{ padding: 16, gap: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Text style={styles.screenTitle}>Roster</Text>
+        <Text style={styles.screenTitle}>My roster</Text>
       </View>
 
-      {/* Chips row */}
       <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
         <Chip
           label={accountName ? accountName : 'Account'}
@@ -188,16 +132,10 @@ export default function MyRoster() {
           disabled={!accountId}
           active={!!teamId}
         />
-        <ToggleChip
-          active={onlyMine}
-          labelOn="My roster only"
-          labelOff="Show all visible"
-          onToggle={() => setOnlyMine((v) => !v)}
-        />
       </View>
 
       {error ? <Text style={styles.err}>{error}</Text> : null}
-      {(onlyMine ? itemsMine === null : itemsAll === null) ? (
+      {items === null ? (
         <View style={{ paddingVertical: 8 }}>
           <ActivityIndicator />
         </View>
@@ -207,41 +145,36 @@ export default function MyRoster() {
     </View>
   );
 
-  const empty = (onlyMine ? itemsMine : itemsAll) ?? [];
-  const data = onlyMine ? (itemsMine ?? []) : (itemsAll ?? []);
+  const data = items ?? [];
 
   return (
     <View style={{ flex: 1 }}>
       <FlatList
         data={data}
-        keyExtractor={(it) =>
-          onlyMine ? (it as MyAssignment).assignment_id : (it as EventRow).event_id
-        }
+        keyExtractor={(it) => it.assignment_id}
         ListHeaderComponent={<Header />}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />}
         ListEmptyComponent={
-          empty.length === 0 ? (
-            <Text style={[styles.muted, { padding: 16 }]}>
-              {onlyMine ? 'No upcoming assignments.' : 'No upcoming events.'}
-            </Text>
+          data.length === 0 ? (
+            <Text style={[styles.muted, { padding: 16 }]}>No upcoming assignments.</Text>
           ) : null
         }
-        renderItem={({ item }) =>
-          onlyMine ? (
-            <AssignmentCard
-              row={item as MyAssignment}
-              fmtDayBadge={fmtDayBadge}
-              fmtTimeRange={fmtTimeRange}
-              onOpenReplacement={handleOpenReplacement}
-            />
-          ) : (
-            <EventCard
-              row={item as EventRow}
-              fmtDayBadge={fmtDayBadge}
-              fmtTimeRange={fmtTimeRange}
-            />
-          )
-        }
+        renderItem={({ item }) => (
+          <Pressable onPress={() => onOpenDetails(item)} style={styles.card}>
+            <View style={styles.dateBadge}>
+              <Text style={styles.dateDow}>{fmtDayBadge(item.starts_at).dow}</Text>
+              <Text style={styles.dateDay}>{fmtDayBadge(item.starts_at).day}</Text>
+            </View>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={styles.cardTitle}>{item.label}</Text>
+              <Text style={styles.cardSub}>
+                {item.account_name ?? 'Account'}
+                {item.team_name ? ` — ${item.team_name}` : ''}
+              </Text>
+              <Text style={styles.metaLine}>🗓️ {fmtTimeRange(item.starts_at, item.ends_at)}</Text>
+            </View>
+          </Pressable>
+        )}
       />
 
       {/* Account picker */}
@@ -255,9 +188,8 @@ export default function MyRoster() {
           subtitle: a.role,
         }))}
         onSelect={(id) => {
-          if (!id) {
-            clear();
-          } else {
+          if (!id) clear();
+          else {
             const a = (accounts ?? []).find((x) => x.account_id === id);
             if (a) setAccount(a.account_id, a.account_name);
           }
@@ -271,15 +203,10 @@ export default function MyRoster() {
         title="Select team"
         open={pickTeamOpen}
         onClose={() => setPickTeamOpen(false)}
-        items={(teams ?? []).map((t) => ({
-          id: t.team_id,
-          title: t.team_name,
-          subtitle: t.role,
-        }))}
+        items={(teams ?? []).map((t) => ({ id: t.team_id, title: t.team_name, subtitle: t.role }))}
         onSelect={(id) => {
-          if (!id) {
-            setTeam('', '');
-          } else {
+          if (!id) setTeam('', '');
+          else {
             const t = (teams ?? []).find((x) => x.team_id === id);
             if (t) setTeam(t.team_id, t.team_name);
           }
@@ -292,8 +219,7 @@ export default function MyRoster() {
   );
 }
 
-/* ---------- Small components ---------- */
-
+/* small bits */
 function Chip({
   label,
   onPress,
@@ -315,108 +241,6 @@ function Chip({
     </Pressable>
   );
 }
-
-function ToggleChip({
-  active,
-  labelOn,
-  labelOff,
-  onToggle,
-}: {
-  active: boolean;
-  labelOn: string;
-  labelOff: string;
-  onToggle: () => void;
-}) {
-  return (
-    <Pressable onPress={onToggle} style={[styles.chip, active && styles.chipActive]}>
-      <Text style={styles.chipLabel}>{active ? labelOn : labelOff}</Text>
-    </Pressable>
-  );
-}
-
-function AssignmentCard({
-  row,
-  fmtDayBadge,
-  fmtTimeRange,
-  onOpenReplacement,
-}: {
-  row: MyAssignment;
-  fmtDayBadge: (_: string) => { dow: string; day: string };
-  fmtTimeRange: (_: string, __: string) => string;
-  onOpenReplacement: (a: MyAssignment) => void;
-}) {
-  const badge = fmtDayBadge(row.starts_at);
-  const statusLabel =
-    row.assignment_status?.toLowerCase() === 'confirmed'
-      ? 'Confirmed'
-      : row.assignment_status
-        ? row.assignment_status
-        : 'Assigned';
-  const statusStyle =
-    row.assignment_status?.toLowerCase() === 'confirmed'
-      ? styles.badgeSuccess
-      : styles.badgeNeutral;
-
-  return (
-    <View style={styles.card}>
-      {/* Left date badge */}
-      <View style={styles.dateBadge}>
-        <Text style={styles.dateDow}>{badge.dow}</Text>
-        <Text style={styles.dateDay}>{badge.day}</Text>
-      </View>
-
-      {/* Right content */}
-      <View style={{ flex: 1, gap: 4 }}>
-        <View
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-        >
-          <View>
-            <Text style={styles.cardTitle}>{row.label}</Text>
-            <Text style={styles.cardSub}>
-              {row.account_name ?? 'Account'}
-              {row.team_name ? ` — ${row.team_name}` : ''}
-            </Text>
-          </View>
-          <View style={[styles.badge, statusStyle]}>
-            <Text style={styles.badgeText}>{statusLabel}</Text>
-          </View>
-        </View>
-
-        <Text style={styles.metaLine}>🗓️ {fmtTimeRange(row.starts_at, row.ends_at)}</Text>
-
-        {/* Actions */}
-        <Pressable onPress={() => onOpenReplacement(row)} style={styles.linkBtn}>
-          <Text style={styles.linkText}>Can’t make it</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-function EventCard({
-  row,
-  fmtDayBadge,
-  fmtTimeRange,
-}: {
-  row: EventRow;
-  fmtDayBadge: (_: string) => { dow: string; day: string };
-  fmtTimeRange: (_: string, __: string) => string;
-}) {
-  const badge = fmtDayBadge(row.starts_at);
-  return (
-    <View style={styles.card}>
-      <View style={styles.dateBadge}>
-        <Text style={styles.dateDow}>{badge.dow}</Text>
-        <Text style={styles.dateDay}>{badge.day}</Text>
-      </View>
-      <View style={{ flex: 1, gap: 4 }}>
-        <Text style={styles.cardTitle}>{row.label}</Text>
-        <Text style={styles.metaLine}>🗓️ {fmtTimeRange(row.starts_at, row.ends_at)}</Text>
-      </View>
-    </View>
-  );
-}
-
 function PickerModal({
   title,
   open,
@@ -434,8 +258,7 @@ function PickerModal({
   allowClear?: boolean;
   disabled?: boolean;
 }) {
-  if (!open) return null;
-  if (disabled) return null;
+  if (!open || disabled) return null;
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
@@ -461,8 +284,6 @@ function PickerModal({
     </Modal>
   );
 }
-
-/* ---------- Styles ---------- */
 
 const styles = StyleSheet.create({
   screenTitle: { fontSize: 24, fontWeight: '800' },
@@ -507,37 +328,11 @@ const styles = StyleSheet.create({
   },
   dateDow: { fontSize: 12, color: '#3b82f6', fontWeight: '800' },
   dateDay: { fontSize: 18, color: '#1f2937', fontWeight: '800' },
-
   cardTitle: { fontSize: 16, fontWeight: '700', color: '#111' },
   cardSub: { fontSize: 12, color: '#555' },
   metaLine: { fontSize: 13, color: '#444' },
 
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  badgeText: { fontSize: 12, fontWeight: '700', color: '#0a3' },
-  badgeSuccess: { backgroundColor: '#e6f8ec' },
-  badgeNeutral: { backgroundColor: '#eef1f5' },
-
-  linkBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e1e1e1',
-    backgroundColor: '#fff',
-  },
-  linkText: { fontSize: 13, fontWeight: '700', color: '#b91c1c' },
-
-  modalBackdrop: {
-    position: 'absolute',
-    inset: 0,
-    backgroundColor: '#0008',
-  },
+  modalBackdrop: { position: 'absolute', inset: 0, backgroundColor: '#0008' },
   modalSheet: {
     position: 'absolute',
     left: 12,
@@ -549,11 +344,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   modalTitle: { fontSize: 16, fontWeight: '800', marginBottom: 4 },
-  modalItem: {
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
+  modalItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   modalItemText: { fontSize: 16, fontWeight: '600', color: '#111' },
   modalItemSub: { fontSize: 12, color: '#666' },
   modalClose: { fontSize: 14, fontWeight: '700', color: '#3b82f6' },
