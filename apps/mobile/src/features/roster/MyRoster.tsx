@@ -10,6 +10,7 @@ import {
   RefreshControl,
   Pressable,
   Modal,
+  Alert,
 } from 'react-native';
 import {
   getMyUpcomingAssignments,
@@ -23,6 +24,7 @@ import {
   type AccountMembership,
   type TeamMembership,
 } from '../../api/memberships';
+import { openReplacementRequest } from '../../api/replacements';
 import { useCurrent } from '../../context/CurrentContext';
 
 export default function MyRoster() {
@@ -138,6 +140,35 @@ export default function MyRoster() {
     return `${day} ${hhmm(s)} – ${hhmm(e)}`;
   };
 
+  // Open replacement for an assignment
+  const handleOpenReplacement = async (a: MyAssignment) => {
+    const ok = await new Promise<boolean>((resolve) => {
+      Alert.alert(
+        "Can't make it?",
+        `Open a replacement request for "${a.label}"?\n\nThis will notify eligible teammates.`,
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Open request', style: 'destructive', onPress: () => resolve(true) },
+        ]
+      );
+    });
+    if (!ok) return;
+
+    try {
+      setRefreshing(true);
+      await openReplacementRequest({
+        accountId: a.account_id,
+        teamId: a.team_id,
+        eventId: a.event_id,
+      });
+      Alert.alert('Replacement opened', 'We’ll notify eligible teammates.');
+    } catch (e: any) {
+      Alert.alert('Could not open replacement', e?.message ?? 'Please try again.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const Header = () => (
     <View style={{ padding: 16, gap: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -201,6 +232,7 @@ export default function MyRoster() {
               row={item as MyAssignment}
               fmtDayBadge={fmtDayBadge}
               fmtTimeRange={fmtTimeRange}
+              onOpenReplacement={handleOpenReplacement}
             />
           ) : (
             <EventCard
@@ -306,10 +338,12 @@ function AssignmentCard({
   row,
   fmtDayBadge,
   fmtTimeRange,
+  onOpenReplacement,
 }: {
   row: MyAssignment;
   fmtDayBadge: (_: string) => { dow: string; day: string };
   fmtTimeRange: (_: string, __: string) => string;
+  onOpenReplacement: (a: MyAssignment) => void;
 }) {
   const badge = fmtDayBadge(row.starts_at);
   const statusLabel =
@@ -349,6 +383,11 @@ function AssignmentCard({
         </View>
 
         <Text style={styles.metaLine}>🗓️ {fmtTimeRange(row.starts_at, row.ends_at)}</Text>
+
+        {/* Actions */}
+        <Pressable onPress={() => onOpenReplacement(row)} style={styles.linkBtn}>
+          <Text style={styles.linkText}>Can’t make it</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -481,6 +520,18 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 12, fontWeight: '700', color: '#0a3' },
   badgeSuccess: { backgroundColor: '#e6f8ec' },
   badgeNeutral: { backgroundColor: '#eef1f5' },
+
+  linkBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e1',
+    backgroundColor: '#fff',
+  },
+  linkText: { fontSize: 13, fontWeight: '700', color: '#b91c1c' },
 
   modalBackdrop: {
     position: 'absolute',
