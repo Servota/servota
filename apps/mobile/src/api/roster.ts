@@ -5,9 +5,12 @@ export type Scope = 'all' | 'account' | 'team';
 
 export type MyAssignment = {
   assignment_id: string;
+  assignment_status: string | null;
   event_id: string;
   account_id: string;
+  account_name: string | null;
   team_id: string;
+  team_name: string | null;
   label: string;
   starts_at: string; // ISO
   ends_at: string; // ISO
@@ -33,6 +36,7 @@ export async function getMyUpcomingAssignments(opts: {
     .select(
       `
       id,
+      status,
       account_id,
       team_id,
       event_id,
@@ -40,10 +44,10 @@ export async function getMyUpcomingAssignments(opts: {
         id,
         label,
         starts_at,
-        ends_at,
-        account_id,
-        team_id
-      )
+        ends_at
+      ),
+      teams:team_id ( name ),
+      accounts:account_id ( name )
     `
     )
     .eq('user_id', userId)
@@ -59,9 +63,12 @@ export async function getMyUpcomingAssignments(opts: {
 
   return (data ?? []).map((row: any) => ({
     assignment_id: row.id,
+    assignment_status: row.status ?? null,
     event_id: row.event_id,
     account_id: row.account_id,
+    account_name: row.accounts?.name ?? null,
     team_id: row.team_id,
+    team_name: row.teams?.name ?? null,
     label: row.events?.label ?? 'Event',
     starts_at: row.events?.starts_at,
     ends_at: row.events?.ends_at,
