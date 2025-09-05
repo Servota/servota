@@ -11,16 +11,15 @@ export default [
   // Files/folders to ignore (replaces .eslintignore)
   {
     ignores: [
-  'node_modules/**',
-  '**/dist/**',
-  '**/build/**',
-  '.pnpm-store/**',
-  'supabase/.temp/**',
-  'apps/web/public/**',
-  '**/*.d.ts',
-  'packages/shared/src/types/supabase.ts'
-],
-
+      'node_modules/**',
+      '**/dist/**',
+      '**/build/**',
+      '.pnpm-store/**',
+      'supabase/.temp/**',
+      'apps/web/public/**',
+      '**/*.d.ts',
+      'packages/shared/src/types/supabase.ts',
+    ],
   },
 
   // Base JS recommended rules
@@ -34,7 +33,7 @@ export default [
       ecmaVersion: 'latest',
       sourceType: 'module',
       parserOptions: { ecmaFeatures: { jsx: true } },
-      globals: { ...globals.browser, ...globals.node }
+      globals: { ...globals.browser, ...globals.node },
     },
     plugins: {
       '@typescript-eslint': tsPlugin,
@@ -63,4 +62,3 @@ export default [
   // Let Prettier handle formatting
   eslintConfigPrettier,
 ];
-

@@ -1,6 +1,9 @@
 import * as React from 'react';
 
-export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({ children, ...props }) => {
+export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({
+  children,
+  ...props
+}) => {
   return (
     <button
       style={{
@@ -8,7 +11,7 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = (
         borderRadius: 10,
         border: 'none',
         fontWeight: 600,
-        cursor: 'pointer'
+        cursor: 'pointer',
       }}
       {...props}
     >

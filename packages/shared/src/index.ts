@@ -3,7 +3,7 @@ export type { SupabaseClient };
 
 export function getSupabase(url: string, anonKey: string) {
   return createClient(url, anonKey, {
-    auth: { persistSession: true, autoRefreshToken: true }
+    auth: { persistSession: true, autoRefreshToken: true },
   });
 }
 

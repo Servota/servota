@@ -9,7 +9,6 @@ export type EventAssignment = {
   is_me: boolean;
 };
 
-/** List current assignments on an event (excluding/splitting me vs others). */
 export async function listEventAssignments(eventId: string): Promise<EventAssignment[]> {
   const { data: userRes, error: userErr } = await supabase.auth.getUser();
   if (userErr) throw userErr;
@@ -18,13 +17,7 @@ export async function listEventAssignments(eventId: string): Promise<EventAssign
 
   const { data, error } = await supabase
     .from('assignments')
-    .select(
-      `
-      id,
-      user_id,
-      profiles:user_id ( full_name )
-    `
-    )
+    .select(`id, user_id, profiles:user_id ( full_name )`)
     .eq('event_id', eventId)
     .order('assigned_at', { ascending: true });
 
@@ -38,7 +31,7 @@ export async function listEventAssignments(eventId: string): Promise<EventAssign
   }));
 }
 
-/** Propose a swap with another assignment on the SAME event. */
+/** Existing same-event swap RPCs (kept) */
 export async function proposeSwap(
   fromAssignmentId: string,
   toAssignmentId: string,
@@ -52,8 +45,6 @@ export async function proposeSwap(
   if (error) throw error;
   return data;
 }
-
-/** Respond to a pending swap ('accept' or 'decline'). */
 export async function respondSwap(swapRequestId: string, action: 'accept' | 'decline') {
   const { data, error } = await supabase.rpc('respond_swap', {
     swap_request_id: swapRequestId,
@@ -62,11 +53,33 @@ export async function respondSwap(swapRequestId: string, action: 'accept' | 'dec
   if (error) throw error;
   return data;
 }
-
-/** Apply a swap (recipient / scheduler / owner-admin). */
 export async function applySwap(swapRequestId: string) {
   const { data, error } = await supabase.rpc('apply_swap', {
     swap_request_id: swapRequestId,
+  });
+  if (error) throw error;
+  return data;
+}
+
+/** Cross-date swap — propose, respond(accept/decline) */
+export async function proposeCrossDateSwap(
+  fromAssignmentId: string,
+  toAssignmentId: string,
+  message?: string
+) {
+  const { data, error } = await supabase.rpc('propose_cross_date_swap', {
+    p_from_assignment_id: fromAssignmentId,
+    p_to_assignment_id: toAssignmentId,
+    p_message: message ?? null,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function respondCrossDateSwap(requestId: string, action: 'accept' | 'decline') {
+  const { data, error } = await supabase.rpc('respond_cross_date_swap', {
+    p_swap_request_id: requestId,
+    p_action: action,
   });
   if (error) throw error;
   return data;

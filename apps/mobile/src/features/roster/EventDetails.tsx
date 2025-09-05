@@ -13,7 +13,7 @@ import {
 import { getUpcomingEventsByTemplate, type EventRow } from '../../api/events';
 import { openReplacementRequest } from '../../api/replacements';
 import { supabase } from '../../lib/supabase';
-import { applyCrossDateSwap } from '../../api/swaps';
+import { proposeCrossDateSwap } from '../../api/swaps';
 
 export type SelectedEvent = {
   event_id: string;
@@ -48,7 +48,7 @@ export default function EventDetails({
     [siblings, targetId]
   );
 
-  // Refresh toggle to re-query after a swap
+  // Refresh toggle to re-query after state changes
   const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
@@ -60,14 +60,14 @@ export default function EventDetails({
       }
       setLoading(true);
       try {
-        // 1) Load other dates in the series, soonest first, EXCLUDING the base
+        // Load other dates in the series, soonest first, EXCLUDING the base event
         const rows = (await getUpcomingEventsByTemplate(selected.template_id, 50)).filter(
           (r) => r.event_id !== selected.event_id
         );
         if (!mounted) return;
         setSiblings(rows);
 
-        // 2) Who am I?
+        // Who am I?
         const { data: userRes } = await supabase.auth.getUser();
         const me = userRes?.user?.id ?? '00000000-0000-0000-0000-000000000000';
 
@@ -83,7 +83,7 @@ export default function EventDetails({
           setBaseAssignmentId(baseAsg?.id ?? null);
         }
 
-        // 3) For each sibling: first assignee (name), assignment id, and whether it's mine
+        // For each sibling: first assignee (name), assignment id, and whether it's mine
         const names: Record<string, string> = {};
         const mine: Record<string, boolean> = {};
         const ids: Record<string, string | null> = {};
@@ -125,7 +125,6 @@ export default function EventDetails({
     return () => {
       mounted = false;
     };
-    // Re-run when we flip refreshTick after a swap
   }, [selected.event_id, selected.template_id, refreshTick]);
 
   const fmtTimeRange = (sIso: string, eIso: string) => {
@@ -155,14 +154,14 @@ export default function EventDetails({
         teamId: selected.team_id,
         eventId: selected.event_id,
       });
-      Alert.alert('Replacement opened', 'We’ll notify eligible teammates via push and email.');
+      Alert.alert('Request sent', 'We’ll notify eligible teammates via push and email.');
     } catch (e: any) {
       Alert.alert('Could not open replacement', e?.message ?? 'Please try again.');
     }
   };
 
-  // Cross-date swap (base ↔ target)
-  const proposeCrossDateSwap = async () => {
+  // Propose cross-date swap (base ↔ target) — creates a pending request
+  const doProposeCrossDateSwap = async () => {
     if (!targetId) return;
     const targetAsgId = assignmentIdByEvent[targetId] ?? null;
 
@@ -181,23 +180,25 @@ export default function EventDetails({
 
     const ok = await new Promise<boolean>((resolve) => {
       Alert.alert(
-        'Swap these dates?',
+        'Propose this swap?',
         `• ${fmtTimeRange(selected.starts_at, selected.ends_at)}\n↔\n• ${fmtTimeRange(target!.starts_at, target!.ends_at)}`,
         [
           { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-          { text: 'Swap', style: 'default', onPress: () => resolve(true) },
+          { text: 'Send request', style: 'default', onPress: () => resolve(true) },
         ]
       );
     });
     if (!ok) return;
 
     try {
-      await applyCrossDateSwap(baseAssignmentId, targetAsgId);
-      Alert.alert('Swapped!', 'Your assignments were exchanged.');
-      setTargetId(null);
-      setRefreshTick((n) => n + 1);
+      await proposeCrossDateSwap(baseAssignmentId, targetAsgId, 'Swap weeks via mobile');
+      Alert.alert(
+        'Request sent',
+        'The other person will receive a notification to accept or decline.'
+      );
+      // keep UI selection; no immediate swap
     } catch (e: any) {
-      Alert.alert('Swap failed', e?.message ?? 'Please try again.');
+      Alert.alert('Could not propose swap', e?.message ?? 'Please try again.');
     }
   };
 
@@ -224,7 +225,7 @@ export default function EventDetails({
             <Text style={styles.primaryText}>Can’t make it</Text>
           </Pressable>
           <Pressable
-            onPress={proposeCrossDateSwap}
+            onPress={doProposeCrossDateSwap}
             disabled={!proposeEnabled}
             style={[styles.secondaryBtn, !proposeEnabled && { opacity: 0.5 }]}
           >

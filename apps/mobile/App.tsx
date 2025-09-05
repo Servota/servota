@@ -21,6 +21,7 @@ import MyRoster from './src/features/roster/MyRoster';
 import MyUnavailability from './src/features/unavailability/MyUnavailability';
 import EventDetails, { type SelectedEvent } from './src/features/roster/EventDetails';
 import HomeAlerts from './src/features/home/HomeAlerts';
+import HomeSwapRequests from './src/features/home/HomeSwapRequests';
 
 type Screen = 'home' | 'memberships' | 'roster' | 'unavailability' | 'eventDetails';
 
@@ -140,6 +141,7 @@ function AuthedApp({ email }: { email: string }) {
 
           {/* Alerts banner */}
           <HomeAlerts />
+          <HomeSwapRequests />
 
           {/* Big action cards */}
           <HomeCard icon="👤" label="Memberships" onPress={() => setScreen('memberships')} />
