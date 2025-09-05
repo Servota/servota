@@ -29,7 +29,7 @@ export type SelectedEvent = {
 
 export default function EventDetails({
   selected, // Base selection (fixed card)
-  setSelected, // kept for future; we will not mutate the base on list clicks
+  setSelected: _setSelected, // unused for now (kept for future)
 }: {
   selected: SelectedEvent;
   setSelected: (_: SelectedEvent) => void;
@@ -48,8 +48,8 @@ export default function EventDetails({
     [siblings, targetId]
   );
 
-  // Refresh toggle to re-query after state changes
-  const [refreshTick, setRefreshTick] = useState(0);
+  // (kept for future refreshes)
+  const [_refreshTick, _setRefreshTick] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -125,7 +125,7 @@ export default function EventDetails({
     return () => {
       mounted = false;
     };
-  }, [selected.event_id, selected.template_id, refreshTick]);
+  }, [selected.event_id, selected.template_id]);
 
   const fmtTimeRange = (sIso: string, eIso: string) => {
     const s = new Date(sIso);
