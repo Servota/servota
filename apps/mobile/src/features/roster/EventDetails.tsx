@@ -13,6 +13,7 @@ import {
 import { getUpcomingEventsByTemplate, type EventRow } from '../../api/events';
 import { openReplacementRequest } from '../../api/replacements';
 import { supabase } from '../../lib/supabase';
+import { applyCrossDateSwap } from '../../api/swaps';
 
 export type SelectedEvent = {
   event_id: string;
@@ -27,8 +28,8 @@ export type SelectedEvent = {
 };
 
 export default function EventDetails({
-  selected, // BASE selection (fixed)
-  setSelected, // kept for future, but we will NOT mutate the base now
+  selected, // Base selection (fixed card)
+  setSelected, // kept for future; we will not mutate the base on list clicks
 }: {
   selected: SelectedEvent;
   setSelected: (_: SelectedEvent) => void;
@@ -36,14 +37,19 @@ export default function EventDetails({
   const [siblings, setSiblings] = useState<EventRow[] | null>(null);
   const [assigneeNameByEvent, setAssigneeNameByEvent] = useState<Record<string, string>>({});
   const [isMineByEvent, setIsMineByEvent] = useState<Record<string, boolean>>({});
+  const [assignmentIdByEvent, setAssignmentIdByEvent] = useState<Record<string, string | null>>({});
+  const [baseAssignmentId, setBaseAssignmentId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Target selection from the list (different date)
+  // Target selection (a different date from the list)
   const [targetId, setTargetId] = useState<string | null>(null);
   const target = useMemo(
     () => (siblings ?? []).find((e) => e.event_id === targetId) ?? null,
     [siblings, targetId]
   );
+
+  // Refresh toggle to re-query after a swap
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -54,56 +60,64 @@ export default function EventDetails({
       }
       setLoading(true);
       try {
-        // Get siblings soonest first, and EXCLUDE the base event
+        // 1) Load other dates in the series, soonest first, EXCLUDING the base
         const rows = (await getUpcomingEventsByTemplate(selected.template_id, 50)).filter(
           (r) => r.event_id !== selected.event_id
         );
         if (!mounted) return;
         setSiblings(rows);
 
-        // Build lookups for "assigned name" and "is mine"
-        const ids = rows.map((r) => r.event_id);
-        const names: Record<string, string> = {};
-        const mine: Record<string, boolean> = {};
-
-        // Who am I?
+        // 2) Who am I?
         const { data: userRes } = await supabase.auth.getUser();
         const me = userRes?.user?.id ?? '00000000-0000-0000-0000-000000000000';
 
-        // My assignments across these events
-        if (ids.length) {
-          const { data: myAsg } = await supabase
+        // Base assignment id (mine on the base date)
+        {
+          const { data: baseAsg } = await supabase
             .from('assignments')
-            .select('event_id')
+            .select('id')
+            .eq('event_id', selected.event_id)
             .eq('user_id', me)
-            .in('event_id', ids);
-          for (const row of myAsg ?? []) mine[row.event_id as string] = true;
+            .limit(1)
+            .maybeSingle();
+          setBaseAssignmentId(baseAsg?.id ?? null);
+        }
 
-          // First assignee name per event (if any)
-          for (const evId of ids) {
-            const { data: asg } = await supabase
-              .from('assignments')
-              .select('user_id')
-              .eq('event_id', evId)
-              .order('assigned_at', { ascending: true })
-              .limit(1);
-            if (asg && asg.length) {
-              const uid = asg[0].user_id as string;
-              const { data: prof } = await supabase
-                .from('profiles')
-                .select('full_name')
-                .eq('user_id', uid)
-                .single();
-              names[evId] = prof?.full_name ?? 'Assigned';
-            } else {
-              names[evId] = 'Unassigned';
-            }
+        // 3) For each sibling: first assignee (name), assignment id, and whether it's mine
+        const names: Record<string, string> = {};
+        const mine: Record<string, boolean> = {};
+        const ids: Record<string, string | null> = {};
+
+        for (const ev of rows) {
+          const { data: arow } = await supabase
+            .from('assignments')
+            .select('id, user_id')
+            .eq('event_id', ev.event_id)
+            .order('assigned_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (arow?.id) {
+            ids[ev.event_id] = arow.id;
+            mine[ev.event_id] = arow.user_id === me;
+
+            const { data: prof } = await supabase
+              .from('profiles')
+              .select('full_name')
+              .eq('user_id', arow.user_id)
+              .maybeSingle();
+            names[ev.event_id] = prof?.full_name ?? 'Assigned';
+          } else {
+            ids[ev.event_id] = null;
+            mine[ev.event_id] = false;
+            names[ev.event_id] = 'Unassigned';
           }
         }
 
         if (!mounted) return;
         setAssigneeNameByEvent(names);
         setIsMineByEvent(mine);
+        setAssignmentIdByEvent(ids);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -111,7 +125,8 @@ export default function EventDetails({
     return () => {
       mounted = false;
     };
-  }, [selected.event_id, selected.template_id]);
+    // Re-run when we flip refreshTick after a swap
+  }, [selected.event_id, selected.template_id, refreshTick]);
 
   const fmtTimeRange = (sIso: string, eIso: string) => {
     const s = new Date(sIso);
@@ -146,23 +161,51 @@ export default function EventDetails({
     }
   };
 
-  // Cross-date swap (base ↔ target): server RPC coming next step — UI is ready now.
-  const proposeCrossDateSwap = () => {
-    if (!target) return;
-    if (isMineByEvent[target.event_id]) {
+  // Cross-date swap (base ↔ target)
+  const proposeCrossDateSwap = async () => {
+    if (!targetId) return;
+    const targetAsgId = assignmentIdByEvent[targetId] ?? null;
+
+    if (!baseAssignmentId) {
+      Alert.alert('No base assignment', 'You are not assigned on the selected base date.');
+      return;
+    }
+    if (!targetAsgId) {
+      Alert.alert('No assignee', 'That date has nobody assigned to swap with.');
+      return;
+    }
+    if (isMineByEvent[targetId]) {
       Alert.alert('Already yours', 'You are already assigned to that date.');
       return;
     }
-    Alert.alert(
-      'Swap request (coming soon)',
-      `We will swap:\n• ${fmtTimeRange(selected.starts_at, selected.ends_at)}\nwith\n• ${fmtTimeRange(target.starts_at, target.ends_at)}\n\nNext step: we’ll add the server RPC to apply this safely.`
-    );
+
+    const ok = await new Promise<boolean>((resolve) => {
+      Alert.alert(
+        'Swap these dates?',
+        `• ${fmtTimeRange(selected.starts_at, selected.ends_at)}\n↔\n• ${fmtTimeRange(target!.starts_at, target!.ends_at)}`,
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Swap', style: 'default', onPress: () => resolve(true) },
+        ]
+      );
+    });
+    if (!ok) return;
+
+    try {
+      await applyCrossDateSwap(baseAssignmentId, targetAsgId);
+      Alert.alert('Swapped!', 'Your assignments were exchanged.');
+      setTargetId(null);
+      setRefreshTick((n) => n + 1);
+    } catch (e: any) {
+      Alert.alert('Swap failed', e?.message ?? 'Please try again.');
+    }
   };
 
   const proposeEnabled =
     !!target &&
     !isMineByEvent[target.event_id] &&
-    (assigneeNameByEvent[target?.event_id ?? ''] ?? '') !== 'Unassigned';
+    (assigneeNameByEvent[target?.event_id ?? ''] ?? '') !== 'Unassigned' &&
+    !!baseAssignmentId;
 
   return (
     <View style={{ flex: 1, paddingHorizontal: 16, gap: 12 }}>
@@ -192,7 +235,7 @@ export default function EventDetails({
         </View>
       </View>
 
-      {/* Other dates in series (soonest first; base excluded) */}
+      {/* Other dates in this series (soonest first; base excluded) */}
       <Text style={styles.h2}>Other dates in this series</Text>
       {loading ? (
         <ActivityIndicator />
@@ -257,7 +300,6 @@ const styles = StyleSheet.create({
   rowMeta: { fontSize: 12, color: '#555' },
   assigneeLine: { fontSize: 12, color: '#333' },
   muted: { color: '#666' },
-
   primaryBtn: {
     alignSelf: 'flex-start',
     backgroundColor: '#3b82f6',
@@ -274,7 +316,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   secondaryText: { color: '#111', fontWeight: '800' },
-
   badgeMine: {
     fontSize: 11,
     color: '#0a3',
@@ -283,21 +324,4 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 6,
   },
-
-  modalBackdrop: { position: 'absolute', inset: 0, backgroundColor: '#0008' },
-  modalSheet: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 12,
-    borderRadius: 14,
-    backgroundColor: '#fff',
-    padding: 12,
-    gap: 6,
-  },
-  modalTitle: { fontSize: 16, fontWeight: '800', marginBottom: 4 },
-  modalItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  modalItemText: { fontSize: 16, fontWeight: '600', color: '#111' },
-  modalItemSub: { fontSize: 12, color: '#666' },
-  modalClose: { fontSize: 14, fontWeight: '700', color: '#3b82f6' },
 });
