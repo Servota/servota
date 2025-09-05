@@ -98,6 +98,15 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
     load();
   }, [load]);
 
+  // Ensure soonest first explicitly (defensive, even though API orders ASC)
+  const data = useMemo(
+    () =>
+      (items ?? [])
+        .slice()
+        .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()),
+    [items]
+  );
+
   const fmtDayBadge = (iso: string) => {
     const d = new Date(iso);
     return {
@@ -144,8 +153,6 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
       <Text style={styles.section}>Upcoming</Text>
     </View>
   );
-
-  const data = items ?? [];
 
   return (
     <View style={{ flex: 1 }}>
