@@ -62,7 +62,7 @@ _Last updated: 28 Aug 2025_
 - [x] [5.5 Add Unavailability (create/edit/delete)](#55-add-unavailability-createeditdelete)
 - [x] [5.6 Add replacement request & claim](#56-add-replacement-request--claim)
 - [x] [5.7 Add peer-to-peer swaps (propose/accept; optional approval)](#57-add-peer-to-peer-swaps-proposeaccept-optional-approval)
-- [ ] [5.8 Enable push notifications (Expo)](#58-enable-push-notifications-expo)
+- [x] [5.8 Enable push notifications (Expo)](#58-enable-push-notifications-expo)
 
 ### Phase 6 — Web/Desktop app (React PWA + Microsoft Store)
 
