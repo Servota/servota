@@ -120,8 +120,8 @@ export async function claimReplacement(requestId: string) {
   if (!userId) throw new Error('Not signed in');
 
   const { data, error } = await supabase.rpc('fn_claim_replacement', {
-    replacement_request_id: requestId,
-    claimant_user_id: userId,
+    p_replacement_request_id: requestId,
+    p_claimant_user_id: userId, // could be omitted; defaults to auth.uid()
   });
 
   if (error) throw error;
