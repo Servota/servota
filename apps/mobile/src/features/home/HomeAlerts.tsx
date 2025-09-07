@@ -8,18 +8,34 @@ import {
   type Scope,
   type OpenReplacementRow,
 } from '../../api/replacements';
+import { supabase } from '../../lib/supabase';
 
 export default function HomeAlerts() {
   const { accountId, teamId } = useCurrent();
   const [items, setItems] = useState<OpenReplacementRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
 
   const scope: Scope = useMemo(
     () => (teamId ? 'team' : accountId ? 'account' : 'all'),
     [accountId, teamId]
   );
 
+  // Load current user id once
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (!mounted) return;
+      if (!error) setMyUserId(data.user?.id ?? null);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Load open replacement requests in scope
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -27,7 +43,11 @@ export default function HomeAlerts() {
       try {
         const rows = await listOpenReplacementRequests({ scope, accountId, teamId, limit: 10 });
         if (!mounted) return;
-        setItems(rows);
+
+        // Exclude requests opened by me (the requester should not see their own request)
+        const filtered = myUserId ? rows.filter((r) => r.requester_user_id !== myUserId) : rows;
+
+        setItems(filtered);
       } catch {
         if (!mounted) return;
         setItems([]);
@@ -38,7 +58,8 @@ export default function HomeAlerts() {
     return () => {
       mounted = false;
     };
-  }, [scope, accountId, teamId]);
+    // re-run when scope changes or when we learn myUserId
+  }, [scope, accountId, teamId, myUserId]);
 
   if (dismissed) return null;
   if (loading)
@@ -47,6 +68,7 @@ export default function HomeAlerts() {
         <ActivityIndicator />
       </View>
     );
+
   if (!items || items.length === 0) return null;
 
   const top = items.slice(0, 3);
