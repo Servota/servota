@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mobile-new",
-    "slug": "mobile-new",
+    "name": "Servota",
+    "slug": "servota",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,17 +13,43 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver notifications relevant to your roster and assignments.",
+        "UIBackgroundModes": ["remote-notification"]
+      }
     },
     "android": {
+      "googleServicesFile": "./android/app/google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": ["NOTIFICATIONS"],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAb5IFkMfusSmwDijjsePnH-W7-AV8t2aU"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#ffffff",
+          "sounds": []
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "32f775aa-c53f-43e1-8a77-eadf2b2e7793"
+      }
+    },
+    "owner": "mattypumba"
   }
 }

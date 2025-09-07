@@ -12,6 +12,8 @@ import {
   Platform,
   StatusBar,
   Pressable,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { supabase } from './src/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
@@ -23,12 +25,17 @@ import EventDetails, { type SelectedEvent } from './src/features/roster/EventDet
 import HomeAlerts from './src/features/home/HomeAlerts';
 import HomeSwapRequests from './src/features/home/HomeSwapRequests';
 
+// notifications helper
+import { initNotifications, registerPushToken } from './src/lib/notifications';
+import * as Notifications from 'expo-notifications';
+
 type Screen = 'home' | 'memberships' | 'roster' | 'unavailability' | 'eventDetails';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Auth bootstrap
   useEffect(() => {
     let mounted = true;
     supabase.auth.getSession().then(({ data, error }) => {
@@ -37,14 +44,52 @@ export default function App() {
       setSession(data.session ?? null);
       setLoading(false);
     });
+
+    // log current notification permission status
+    Notifications.getPermissionsAsync().then((p) => {
+      console.log('🔔 Current notification permission status:', p);
+    });
+
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      console.log('👤 auth state change:', _event, Boolean(newSession));
       setSession(newSession);
     });
+
     return () => {
       mounted = false;
       sub.subscription.unsubscribe();
     };
   }, []);
+
+  // Notifications bootstrap
+  useEffect(() => {
+    if (!session) return;
+
+    let unsubNotif: (() => void) | undefined;
+    let mounted = true;
+
+    (async () => {
+      const { unsubscribe } = await initNotifications();
+      if (!mounted) {
+        unsubscribe?.();
+        return;
+      }
+      unsubNotif = unsubscribe;
+    })();
+
+    const handleAppState = async (state: AppStateStatus) => {
+      if (state === 'active') {
+        await registerPushToken();
+      }
+    };
+    const appStateSub = AppState.addEventListener('change', handleAppState);
+
+    return () => {
+      mounted = false;
+      unsubNotif?.();
+      appStateSub.remove();
+    };
+  }, [session]);
 
   return (
     <CurrentProvider>
@@ -74,9 +119,33 @@ function AuthedApp({ email }: { email: string }) {
   const [selectedEvent, setSelectedEvent] = useState<SelectedEvent | null>(null);
   const { accountName, teamName } = useCurrent();
 
+  const handleSignOut = async () => {
+    console.log('🔑 signOut pressed');
+    const { error } = await supabase.auth.signOut();
+    console.log('🔑 signOut result:', { error });
+    if (error) Alert.alert('Sign out failed', error.message);
+  };
+
   const back = () => {
     if (screen === 'eventDetails') setScreen('roster');
     else setScreen('home');
+  };
+
+  // 👉 Local notification test (fires in 3 seconds)
+  const testLocalNotification = async () => {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Servota (local)',
+        body: 'If you see this, notification display works.',
+        data: { screen: 'home' },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 3,
+        repeats: false,
+      },
+    });
+    Alert.alert('Scheduled', 'Local notification will appear in ~3 seconds.');
   };
 
   return (
@@ -92,40 +161,27 @@ function AuthedApp({ email }: { email: string }) {
               marginBottom: 6,
             }}
           >
-            <Button title="◀ Back" onPress={back} />
-            <Button
-              title="Sign out"
-              onPress={async () => {
-                const { error } = await supabase.auth.signOut();
-                if (error) Alert.alert('Sign out failed', error.message);
-              }}
-            />
+            <Button title="‹ Back" onPress={back} />
+            <Button title="Sign out" onPress={handleSignOut} />
           </View>
         ) : (
           <View
             style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
           >
             <Text style={styles.title}>Welcome</Text>
-            <Button
-              title="Sign out"
-              onPress={async () => {
-                const { error } = await supabase.auth.signOut();
-                if (error) Alert.alert('Sign out failed', error.message);
-              }}
-            />
+            <Button title="Sign out" onPress={handleSignOut} />
           </View>
         )}
         <Text style={styles.subtitle}>
           {email}
-          {accountName ? ` • ${accountName}` : ''}
-          {teamName ? ` → ${teamName}` : ''}
+          {accountName ? ` · ${accountName}` : ''}
+          {teamName ? ` › ${teamName}` : ''}
         </Text>
       </View>
 
       {/* Screens */}
       {screen === 'home' && (
         <View style={{ flex: 1, paddingHorizontal: 20, gap: 12 }}>
-          {/* Logo / brand */}
           <View style={{ alignItems: 'center', marginTop: 8, marginBottom: 6 }}>
             <View style={styles.logoRow}>
               <View style={styles.logoMark}>
@@ -139,30 +195,25 @@ function AuthedApp({ email }: { email: string }) {
             </Text>
           </View>
 
-          {/* Alerts banner */}
           <HomeAlerts />
           <HomeSwapRequests />
 
-          {/* Big action cards */}
-          <HomeCard icon="👤" label="Memberships" onPress={() => setScreen('memberships')} />
-          <HomeCard icon="👥" label="Roster" onPress={() => setScreen('roster')} />
-          <HomeCard icon="📅" label="Unavailability" onPress={() => setScreen('unavailability')} />
+          <HomeCard icon="🧑‍🤝‍🧑" label="Memberships" onPress={() => setScreen('memberships')} />
+          <HomeCard icon="📅" label="Roster" onPress={() => setScreen('roster')} />
+          <HomeCard icon="⛔" label="Unavailability" onPress={() => setScreen('unavailability')} />
 
-          {/* Context hint */}
+          {/* 👉 Test button */}
+          <View style={{ marginTop: 8 }}>
+            <Button title="Test local notification" onPress={testLocalNotification} />
+          </View>
+
           <Text style={[styles.mutedSmall, { textAlign: 'center', marginTop: 6 }]}>
             {accountName ? `Selected: ${accountName}` : 'No account selected'}
-            {teamName ? ` → ${teamName}` : ''}
+            {teamName ? ` › ${teamName}` : ''}
           </Text>
 
-          {/* Footer logout */}
           <View style={{ flex: 1 }} />
-          <Pressable
-            onPress={async () => {
-              const { error } = await supabase.auth.signOut();
-              if (error) Alert.alert('Sign out failed', error.message);
-            }}
-            style={{ alignSelf: 'center', paddingVertical: 16 }}
-          >
+          <Pressable onPress={handleSignOut} style={{ alignSelf: 'center', paddingVertical: 16 }}>
             <Text style={[styles.muted, { fontWeight: '600' }]}>Logout</Text>
           </Pressable>
         </View>
@@ -215,16 +266,18 @@ function SignInView() {
   const signIn = async () => {
     if (!email || !password) return Alert.alert('Enter email and password');
     setWorking(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     setWorking(false);
+    console.log('🔑 signIn result:', { hasSession: Boolean(data?.session), error });
     if (error) Alert.alert('Sign in failed', error.message);
   };
 
   const signUp = async () => {
     if (!email || !password) return Alert.alert('Enter email and password');
     setWorking(true);
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({ email, password });
     setWorking(false);
+    console.log('🆕 signUp result:', { hasUser: Boolean(data?.user), error });
     if (error) Alert.alert('Sign up failed', error.message);
     else Alert.alert('Check your email', 'We sent you a confirmation link.');
   };

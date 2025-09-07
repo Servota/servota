@@ -1,3 +1,7 @@
+// supabase/functions/notif_dispatcher/index.ts
+// Sends real push notifications via Expo Push API (no legacy server key needed for V1).
+// Requires: push tokens in `push_tokens` and queued rows in `notifications` (via v_notifications_pending).
+
 // @ts-nocheck
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -14,13 +18,13 @@ const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-// Helper: claim one queued notification by id (race-safe via WHERE status='queued')
+// race-safe claim
 async function claimNotification(id: string) {
   const { data, error } = await admin
     .from('notifications')
     .update({
       status: 'sending',
-      attempts: 1, // simple baseline; we’re not incrementing atomically yet
+      attempts: 1,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
@@ -32,10 +36,30 @@ async function claimNotification(id: string) {
   return { claimed: !!data, row: data };
 }
 
-serve(async (req: Request): Promise<Response> => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+async function sendExpoPush(messages: Array<Record<string, unknown>>) {
+  // Expo allows up to 100 messages per call
+  const chunks: Array<typeof messages> = [];
+  for (let i = 0; i < messages.length; i += 100) chunks.push(messages.slice(i, i + 100));
+
+  const results: Array<{ ok: boolean; data?: unknown; error?: unknown }> = [];
+  for (const chunk of chunks) {
+    const res = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(chunk),
+    });
+    if (!res.ok) {
+      results.push({ ok: false, error: `http ${res.status}` });
+      continue;
+    }
+    const json = await res.json().catch(() => ({}));
+    results.push({ ok: true, data: json });
   }
+  return results;
+}
+
+serve(async (req: Request): Promise<Response> => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   const url = new URL(req.url);
   const isPost = req.method === 'POST';
@@ -44,7 +68,7 @@ serve(async (req: Request): Promise<Response> => {
   const dryRun = (body.dry_run ?? url.searchParams.get('dry_run') ?? 'false').toString() === 'true';
   const limit = Math.max(1, Math.min(50, Number(limitRaw)));
 
-  // Fetch pending notifications (visible via view)
+  // fetch due notifications
   const { data: pending, error: fetchErr } = await admin
     .from('v_notifications_pending')
     .select('*')
@@ -65,33 +89,26 @@ serve(async (req: Request): Promise<Response> => {
   const logs: Array<Record<string, unknown>> = [];
 
   for (const n of pending ?? []) {
-    // Claim (skip if someone else grabbed it)
     const claim = await claimNotification(n.id);
     if (!claim.claimed) {
-      logs.push({ id: n.id, skip: 'not_queued_anymore' });
+      logs.push({ id: n.id, skip: 'lost_race' });
       continue;
     }
     processed++;
 
     try {
       if (dryRun) {
-        // Don’t deliver, just mark sent in logs
-        logs.push({ id: n.id, dryRun: true, channel: n.channel, user_id: n.user_id });
-        // Mark as sent without external call (dry-run sets back to queued? we’ll mark sent to unblock queue in dev)
         await admin
           .from('notifications')
-          .update({
-            status: 'sent',
-            sent_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
+          .update({ status: 'sent', sent_at: new Date().toISOString() })
           .eq('id', n.id);
         sent++;
+        logs.push({ id: n.id, dryRun: true });
         continue;
       }
 
       if (n.channel === 'push') {
-        // Look up active push tokens
+        // tokens for recipient
         const { data: tokens, error: tokErr } = await admin
           .from('push_tokens')
           .select('token')
@@ -99,49 +116,62 @@ serve(async (req: Request): Promise<Response> => {
           .eq('status', 'active');
 
         if (tokErr) throw tokErr;
+
         const tokenList = (tokens ?? []).map((t) => t.token);
         if (tokenList.length === 0) {
-          // No tokens — mark failed
           await admin
             .from('notifications')
-            .update({
-              status: 'failed',
-              last_error: 'no_active_push_tokens',
-              updated_at: new Date().toISOString(),
-            })
+            .update({ status: 'failed', last_error: 'no_active_push_tokens' })
             .eq('id', n.id);
           failed++;
           logs.push({ id: n.id, failed: 'no_active_push_tokens' });
           continue;
         }
 
-        // TODO: integrate Expo Push later. For now, simulate success.
-        console.log('Simulated push', { id: n.id, to: tokenList, title: n.title });
+        // build Expo messages
+        const messages = tokenList.map((to) => ({
+          to,
+          title: n.title ?? 'Servota',
+          body: n.body ?? '',
+          data: n.data ?? {},
+          sound: null,
+          // for SDK 53, channel setup later; basic delivery now
+        }));
 
-        await admin
-          .from('notifications')
-          .update({
-            status: 'sent',
-            sent_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', n.id);
-        sent++;
-        logs.push({ id: n.id, sent: true, tokens: tokenList.length });
+        const results = await sendExpoPush(messages);
+        const anyError = results.some((r) => !r.ok);
+
+        if (anyError) {
+          await admin
+            .from('notifications')
+            .update({
+              status: 'failed',
+              last_error: JSON.stringify(results),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', n.id);
+          failed++;
+          logs.push({ id: n.id, failed: 'expo_push_error', results });
+        } else {
+          await admin
+            .from('notifications')
+            .update({
+              status: 'sent',
+              sent_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', n.id);
+          sent++;
+          logs.push({ id: n.id, sent: true, tokens: tokenList.length });
+        }
       } else if (n.channel === 'email') {
-        // TODO: integrate email provider later; mark sent for now
+        // future: integrate provider
         await admin
           .from('notifications')
-          .update({
-            status: 'sent',
-            sent_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
+          .update({ status: 'sent', sent_at: new Date().toISOString() })
           .eq('id', n.id);
         sent++;
-        logs.push({ id: n.id, sent: true, via: 'email' });
       } else {
-        // Unknown channel — fail
         await admin
           .from('notifications')
           .update({
@@ -151,7 +181,6 @@ serve(async (req: Request): Promise<Response> => {
           })
           .eq('id', n.id);
         failed++;
-        logs.push({ id: n.id, failed: 'unsupported_channel' });
       }
     } catch (err) {
       console.error('dispatch error', { id: n.id, err: String(err) });
@@ -167,17 +196,7 @@ serve(async (req: Request): Promise<Response> => {
     }
   }
 
-  const res = {
-    ok: true,
-    processed,
-    sent,
-    failed,
-    limit,
-    dryRun,
-    countPendingFetched: pending?.length ?? 0,
-    logs,
-  };
-  return new Response(JSON.stringify(res), {
+  return new Response(JSON.stringify({ ok: true, processed, sent, failed, limit, dryRun, logs }), {
     status: 200,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
