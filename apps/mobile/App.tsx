@@ -1,4 +1,4 @@
-// apps/mobile/App.tsx
+/* apps/mobile/App.tsx */
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -14,10 +14,11 @@ import {
   Pressable,
   AppState,
   AppStateStatus,
+  Image,
 } from 'react-native';
 import { supabase } from './src/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
-import { CurrentProvider, useCurrent } from './src/context/CurrentContext';
+import { CurrentProvider } from './src/context/CurrentContext';
 import MyMemberships from './src/features/memberships/MyMemberships';
 import MyRoster from './src/features/roster/MyRoster';
 import MyUnavailability from './src/features/unavailability/MyUnavailability';
@@ -117,35 +118,17 @@ export default function App() {
 function AuthedApp({ email }: { email: string }) {
   const [screen, setScreen] = useState<Screen>('home');
   const [selectedEvent, setSelectedEvent] = useState<SelectedEvent | null>(null);
-  const { accountName, teamName } = useCurrent();
 
   const handleSignOut = async () => {
-    console.log('🔑 signOut pressed');
+    console.log('⎋ signOut pressed');
     const { error } = await supabase.auth.signOut();
-    console.log('🔑 signOut result:', { error });
+    console.log('⎋ signOut result:', { error });
     if (error) Alert.alert('Sign out failed', error.message);
   };
 
   const back = () => {
     if (screen === 'eventDetails') setScreen('roster');
     else setScreen('home');
-  };
-
-  // 👉 Local notification test (fires in 3 seconds)
-  const testLocalNotification = async () => {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'Servota (local)',
-        body: 'If you see this, notification display works.',
-        data: { screen: 'home' },
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 3,
-        repeats: false,
-      },
-    });
-    Alert.alert('Scheduled', 'Local notification will appear in ~3 seconds.');
   };
 
   return (
@@ -162,59 +145,55 @@ function AuthedApp({ email }: { email: string }) {
             }}
           >
             <Button title="‹ Back" onPress={back} />
-            <Button title="Sign out" onPress={handleSignOut} />
+            {/* no top-right sign out */}
+            <View style={{ width: 68 }} />
           </View>
         ) : (
-          <View
-            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
-          >
-            <Text style={styles.title}>Welcome</Text>
-            <Button title="Sign out" onPress={handleSignOut} />
+          <View style={{ alignItems: 'center', marginBottom: 2 }}>
+            {/* Text-only brand (no blue cross) */}
+            <Text style={styles.appBrand}>Servota</Text>
           </View>
         )}
-        <Text style={styles.subtitle}>
-          {email}
-          {accountName ? ` · ${accountName}` : ''}
-          {teamName ? ` › ${teamName}` : ''}
-        </Text>
       </View>
 
       {/* Screens */}
       {screen === 'home' && (
         <View style={{ flex: 1, paddingHorizontal: 20, gap: 12 }}>
-          <View style={{ alignItems: 'center', marginTop: 8, marginBottom: 6 }}>
-            <View style={styles.logoRow}>
-              <View style={styles.logoMark}>
-                <Text style={styles.logoPlus}>＋</Text>
-              </View>
-              <Text style={styles.logoText}>Servota</Text>
-            </View>
-            <Text style={[styles.muted, { marginTop: 8 }]}>
+          {/* Welcome under brand */}
+          <View style={{ alignItems: 'flex-start', marginTop: 2, marginBottom: 6 }}>
+            <Text style={styles.muted}>
               Welcome,{'\n'}
               <Text style={{ fontWeight: '600', color: '#111' }}>{email}</Text>
             </Text>
           </View>
 
+          {/* Banners */}
           <HomeAlerts />
           <HomeSwapRequests />
 
-          <HomeCard icon="🧑‍🤝‍🧑" label="Memberships" onPress={() => setScreen('memberships')} />
-          <HomeCard icon="📅" label="Roster" onPress={() => setScreen('roster')} />
-          <HomeCard icon="⛔" label="Unavailability" onPress={() => setScreen('unavailability')} />
+          {/* Cards */}
+          <HomeCard
+            image={require('./assets/home/memberships.png')}
+            label="Memberships"
+            onPress={() => setScreen('memberships')}
+          />
+          <HomeCard
+            image={require('./assets/home/roster.png')}
+            label="Roster"
+            onPress={() => setScreen('roster')}
+          />
+          <HomeCard
+            image={require('./assets/home/unavailability.png')}
+            label="Unavailability"
+            onPress={() => setScreen('unavailability')}
+          />
 
-          {/* 👉 Test button */}
-          <View style={{ marginTop: 8 }}>
-            <Button title="Test local notification" onPress={testLocalNotification} />
-          </View>
-
-          <Text style={[styles.mutedSmall, { textAlign: 'center', marginTop: 6 }]}>
-            {accountName ? `Selected: ${accountName}` : 'No account selected'}
-            {teamName ? ` › ${teamName}` : ''}
-          </Text>
-
+          {/* Spacer */}
           <View style={{ flex: 1 }} />
-          <Pressable onPress={handleSignOut} style={{ alignSelf: 'center', paddingVertical: 16 }}>
-            <Text style={[styles.muted, { fontWeight: '600' }]}>Logout</Text>
+
+          {/* Big raised Logout at bottom */}
+          <Pressable onPress={handleSignOut} style={styles.logoutBtn}>
+            <Text style={styles.logoutText}>Logout</Text>
           </Pressable>
         </View>
       )}
@@ -249,10 +228,10 @@ function AuthedApp({ email }: { email: string }) {
   );
 }
 
-function HomeCard({ icon, label, onPress }: { icon: string; label: string; onPress: () => void }) {
+function HomeCard({ image, label, onPress }: { image: any; label: string; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={styles.cardBtn}>
-      <Text style={styles.cardIcon}>{icon}</Text>
+      <Image source={image} style={styles.cardIconImg} resizeMode="contain" />
       <Text style={styles.cardLabel}>{label}</Text>
     </Pressable>
   );
@@ -268,7 +247,7 @@ function SignInView() {
     setWorking(true);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     setWorking(false);
-    console.log('🔑 signIn result:', { hasSession: Boolean(data?.session), error });
+    console.log('⎋ signIn result:', { hasSession: Boolean(data?.session), error });
     if (error) Alert.alert('Sign in failed', error.message);
   };
 
@@ -277,7 +256,7 @@ function SignInView() {
     setWorking(true);
     const { data, error } = await supabase.auth.signUp({ email, password });
     setWorking(false);
-    console.log('🆕 signUp result:', { hasUser: Boolean(data?.user), error });
+    console.log('✚ signUp result:', { hasUser: Boolean(data?.user), error });
     if (error) Alert.alert('Sign up failed', error.message);
     else Alert.alert('Check your email', 'We sent you a confirmation link.');
   };
@@ -331,17 +310,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'stretch', justifyContent: 'center', padding: 20, gap: 12 },
 
   // Branding
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logoMark: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: '#3b82f6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoPlus: { color: '#fff', fontSize: 22, fontWeight: '800', marginTop: -1 },
-  logoText: { fontSize: 28, fontWeight: '800', color: '#222' },
+  appBrand: { fontSize: 28, fontWeight: '800', color: '#222' },
 
   title: { fontSize: 28, fontWeight: '700', textAlign: 'center' },
   subtitle: { fontSize: 16, textAlign: 'center', marginBottom: 8 },
@@ -370,6 +339,58 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
-  cardIcon: { fontSize: 22 },
+  cardIconImg: { width: 22, height: 22, opacity: 0.9 },
   cardLabel: { fontSize: 18, fontWeight: '700', color: '#222' },
+
+  // Event details etc
+  card: {
+    borderWidth: 1,
+    borderColor: '#ececec',
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  sub: { fontSize: 12, color: '#555', marginTop: 2 },
+  meta: { fontSize: 13, color: '#444', marginTop: 6 },
+  h2: { fontSize: 16, fontWeight: '800', marginTop: 8 },
+  rowMeta: { fontSize: 12, color: '#555' },
+  mutedRow: { color: '#666' },
+  primaryBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  primaryText: { color: '#fff', fontWeight: '800' },
+  secondaryBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#eef1f5',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  secondaryText: { color: '#111', fontWeight: '800' },
+
+  // Logout button
+  logoutBtn: {
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#f3f4f6',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  logoutText: { fontWeight: '700', color: '#111', fontSize: 16 },
 });

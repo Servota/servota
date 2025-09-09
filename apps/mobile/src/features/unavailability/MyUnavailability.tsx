@@ -20,10 +20,16 @@ import {
   removeUnavailability,
   type Unavailability,
 } from '../../api/unavailability';
+import { supabase } from '../../lib/supabase';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 
 export default function MyUnavailability() {
-  const { accountId, accountName } = useCurrent();
+  const { accountId: ctxAccountId, accountName } = useCurrent();
+
+  // resolved account id we’ll actually use (auto-picked if user didn’t select)
+  const [resolvedAccountId, setResolvedAccountId] = useState<string | null>(null);
+  const [resolvingAcct, setResolvingAcct] = useState(true);
+
   const [items, setItems] = useState<Unavailability[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,15 +45,61 @@ export default function MyUnavailability() {
   const [iosPickerMode, setIosPickerMode] = useState<'date' | 'time'>('date');
   const [iosTemp, setIosTemp] = useState<Date>(new Date());
 
+  // Resolve an account id automatically so user doesn’t need to pick one
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      setResolvingAcct(true);
+      try {
+        // 1) If context selected, use it
+        if (ctxAccountId) {
+          if (mounted) setResolvedAccountId(ctxAccountId);
+          return;
+        }
+        // 2) Try profiles.default_account_id
+        const { data: userRes, error: userErr } = await supabase.auth.getUser();
+        if (userErr) throw userErr;
+        const uid = userRes.user?.id;
+        if (!uid) throw new Error('Not signed in');
+
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('default_account_id')
+          .eq('user_id', uid)
+          .maybeSingle();
+
+        if (prof?.default_account_id) {
+          if (mounted) setResolvedAccountId(prof.default_account_id);
+          return;
+        }
+
+        // 3) Fall back to first account_membership
+        const { data: mems } = await supabase
+          .from('account_memberships')
+          .select('account_id')
+          .eq('user_id', uid)
+          .eq('status', 'active');
+
+        const first = (mems ?? [])[0]?.account_id ?? null;
+        if (mounted) setResolvedAccountId(first ?? null);
+      } finally {
+        if (mounted) setResolvingAcct(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [ctxAccountId]);
+
   const load = useCallback(async () => {
-    if (!accountId) {
-      setItems([]);
+    if (!resolvedAccountId) {
+      setItems([]); // show empty quietly if we couldn’t resolve any account
       return;
     }
     setError(null);
     setRefreshing(true);
     try {
-      const rows = await listMyFutureUnavailability(accountId);
+      const rows = await listMyFutureUnavailability(resolvedAccountId);
       setItems(rows);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load unavailability');
@@ -55,22 +107,18 @@ export default function MyUnavailability() {
     } finally {
       setRefreshing(false);
     }
-  }, [accountId]);
+  }, [resolvedAccountId]);
 
   useEffect(() => {
     setItems(null);
-    load();
-  }, [load]);
+    if (!resolvingAcct) load();
+  }, [resolvingAcct, load]);
 
   const fmtRange = (sIso: string, eIso: string) => {
     const s = new Date(sIso);
     const e = new Date(eIso);
     const dd = (d: Date) =>
-      d.toLocaleDateString(undefined, {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-      });
+      d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
     const tt = (d: Date) =>
       d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(' ', '');
     const sameDay = s.toDateString() === e.toDateString();
@@ -102,11 +150,16 @@ export default function MyUnavailability() {
   };
 
   const saveAdd = async () => {
-    if (!accountId) return;
+    if (!resolvedAccountId) {
+      return Alert.alert(
+        'No account available',
+        'We couldn’t find an account to attach this to. Please create or join an account first.'
+      );
+    }
     if (endAt <= startAt) return Alert.alert('Invalid time range', 'End must be after start.');
     try {
       setWorking(true);
-      await addUnavailabilityRange(accountId, startAt, endAt);
+      await addUnavailabilityRange(resolvedAccountId, startAt, endAt);
       setAddOpen(false);
       await load();
     } catch (e: any) {
@@ -116,7 +169,7 @@ export default function MyUnavailability() {
     }
   };
 
-  // Cross-platform picker handlers
+  // Cross-platform date/time pickers
   const pickStart = () =>
     pickDateTime(startAt, setStartAt, setIosPickerTarget, setIosPickerMode, setIosTemp);
   const pickEnd = () =>
@@ -126,28 +179,20 @@ export default function MyUnavailability() {
     <View style={{ padding: 16, gap: 10 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <Text style={styles.h1}>My Unavailability</Text>
-        <Pressable
-          disabled={!accountId}
-          onPress={openAdd}
-          style={[styles.addBtn, !accountId && styles.addBtnDisabled]}
-        >
+        <Pressable onPress={openAdd} style={styles.addBtn} disabled={resolvingAcct}>
           <Text style={styles.addBtnText}>＋ Add</Text>
         </Pressable>
       </View>
 
-      {accountId ? (
+      {/* Optional context hint if available; otherwise say nothing */}
+      {ctxAccountId && accountName ? (
         <Text style={styles.muted}>
-          For <Text style={{ fontWeight: '700', color: '#111' }}>{accountName}</Text>
+          (Applies across <Text style={{ fontWeight: '700', color: '#111' }}>{accountName}</Text>)
         </Text>
-      ) : (
-        <Text style={styles.muted}>
-          Select an account in <Text style={{ fontWeight: '700', color: '#111' }}>Memberships</Text>{' '}
-          to manage unavailability.
-        </Text>
-      )}
+      ) : null}
 
       {error ? <Text style={styles.err}>{error}</Text> : null}
-      {items === null ? (
+      {items === null || resolvingAcct ? (
         <View style={{ paddingVertical: 8 }}>
           <ActivityIndicator />
         </View>
@@ -166,11 +211,7 @@ export default function MyUnavailability() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />}
         ListEmptyComponent={
           items && items.length === 0 ? (
-            <Text style={[styles.muted, { padding: 16 }]}>
-              {accountId
-                ? 'No future unavailability.'
-                : 'Select an account to view unavailability.'}
-            </Text>
+            <Text style={[styles.muted, { padding: 16 }]}>No future unavailability.</Text>
           ) : null
         }
         renderItem={({ item }) => (
@@ -346,7 +387,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: '#3b82f6',
   },
-  addBtnDisabled: { backgroundColor: '#9dbcf7' },
   addBtnText: { color: '#fff', fontWeight: '800' },
 
   card: {
