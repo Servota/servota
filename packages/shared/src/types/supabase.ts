@@ -743,6 +743,7 @@ export type Database = {
           id: string;
           name: string;
           roster_visibility: Database['public']['Enums']['roster_visibility'];
+          swap_requires_approval: boolean | null;
           updated_at: string;
         };
         Insert: {
@@ -753,6 +754,7 @@ export type Database = {
           id?: string;
           name: string;
           roster_visibility?: Database['public']['Enums']['roster_visibility'];
+          swap_requires_approval?: boolean | null;
           updated_at?: string;
         };
         Update: {
@@ -763,6 +765,7 @@ export type Database = {
           id?: string;
           name?: string;
           roster_visibility?: Database['public']['Enums']['roster_visibility'];
+          swap_requires_approval?: boolean | null;
           updated_at?: string;
         };
         Relationships: [
@@ -941,6 +944,13 @@ export type Database = {
       };
     };
     Functions: {
+      apply_cross_date_swap: {
+        Args: { p_from_assignment_id: string; p_to_assignment_id: string };
+        Returns: {
+          updated_from: string;
+          updated_to: string;
+        }[];
+      };
       apply_swap: {
         Args: { p_swap_request_id: string };
         Returns: {
@@ -1245,6 +1255,29 @@ export type Database = {
         Args: { aid: string; tid: string };
         Returns: boolean;
       };
+      propose_cross_date_swap: {
+        Args: {
+          p_from_assignment_id: string;
+          p_message?: string;
+          p_to_assignment_id: string;
+        };
+        Returns: {
+          account_id: string;
+          applied_at: string | null;
+          created_at: string;
+          event_id: string;
+          expires_at: string | null;
+          from_assignment_id: string;
+          from_user_id: string;
+          id: string;
+          message: string | null;
+          responded_at: string | null;
+          status: Database['public']['Enums']['swap_status'];
+          team_id: string;
+          to_assignment_id: string;
+          to_user_id: string;
+        };
+      };
       propose_swap: {
         Args: {
           p_from_assignment_id: string;
@@ -1280,6 +1313,25 @@ export type Database = {
           token: string;
           updated_at: string;
           user_id: string;
+        };
+      };
+      respond_cross_date_swap: {
+        Args: { p_action: string; p_swap_request_id: string };
+        Returns: {
+          account_id: string;
+          applied_at: string | null;
+          created_at: string;
+          event_id: string;
+          expires_at: string | null;
+          from_assignment_id: string;
+          from_user_id: string;
+          id: string;
+          message: string | null;
+          responded_at: string | null;
+          status: Database['public']['Enums']['swap_status'];
+          team_id: string;
+          to_assignment_id: string;
+          to_user_id: string;
         };
       };
       respond_swap: {
