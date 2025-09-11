@@ -9,7 +9,6 @@ type SwapRow = {
   created_at: string | null;
   event_id: string;
   events?: { label?: string | null; starts_at?: string; ends_at?: string } | null;
-  // Optional: who/from/to (depends on your schema)
 };
 
 export default function TeamApprovals() {
@@ -24,7 +23,6 @@ export default function TeamApprovals() {
     setLoading(true);
     setErr(null);
     try {
-      // Pull swaps that need approval in this team.
       const { data, error } = await supabase
         .from('swap_requests')
         .select(
@@ -41,8 +39,9 @@ export default function TeamApprovals() {
         .eq('team_id', teamId)
         .eq('status', 'needs_approval')
         .order('created_at', { ascending: true });
+
       if (error) throw error;
-      setItems((data ?? []) as any);
+      setItems((data ?? []) as unknown as SwapRow[]);
     } catch (e: any) {
       setErr(e?.message ?? 'Failed to load approvals');
     } finally {
@@ -57,8 +56,10 @@ export default function TeamApprovals() {
 
   const approve = async (id: string) => {
     try {
-      // For an approval flow, you might require a prior state check here.
-      const { error } = await supabase.rpc('apply_swap', { swap_request_id: id });
+      // Correct param name: p_swap_request_id
+      const { error } = await supabase.rpc('apply_swap', {
+        p_swap_request_id: id,
+      });
       if (error) throw error;
       setItems((prev) => prev.filter((r) => r.id !== id));
     } catch (e: any) {
@@ -68,7 +69,11 @@ export default function TeamApprovals() {
 
   const decline = async (id: string) => {
     try {
-      const { error } = await supabase.rpc('respond_swap', { swap_request_id: id, action: 'decline' });
+      // Correct param names: p_swap_request_id, p_action
+      const { error } = await supabase.rpc('respond_swap', {
+        p_swap_request_id: id,
+        p_action: 'decline',
+      });
       if (error) throw error;
       setItems((prev) => prev.filter((r) => r.id !== id));
     } catch (e: any) {
@@ -79,17 +84,21 @@ export default function TeamApprovals() {
   const fmt = (iso?: string) => {
     if (!iso) return '—';
     const d = new Date(iso);
-    const day = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-    const t = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(' ', '');
+    const day = d.toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
+    const t = d
+      .toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+      .replace(' ', '');
     return `${day} • ${t}`;
-    };
+  };
 
   return (
     <section style={{ marginTop: 12 }}>
       <h2 style={{ marginTop: 0 }}>Approvals</h2>
-      <p style={{ opacity: 0.8, marginTop: -6 }}>
-        Swaps waiting for scheduler/admin approval.
-      </p>
+      <p style={{ opacity: 0.8, marginTop: -6 }}>Swaps waiting for scheduler/admin approval.</p>
 
       <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
         {loading ? (
@@ -113,8 +122,12 @@ export default function TeamApprovals() {
                   <td style={tdLeft}>{r.events?.label ?? 'Event'}</td>
                   <td style={td}>{fmt(r.events?.starts_at)}</td>
                   <td style={tdRight}>
-                    <button style={btnPrimarySm} onClick={() => approve(r.id)}>Approve</button>
-                    <button style={btnGhostSm} onClick={() => decline(r.id)}>Decline</button>
+                    <button style={btnPrimarySm} onClick={() => approve(r.id)}>
+                      Approve
+                    </button>
+                    <button style={btnGhostSm} onClick={() => decline(r.id)}>
+                      Decline
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -127,11 +140,36 @@ export default function TeamApprovals() {
 }
 
 /* styles */
-const th = { textAlign: 'left' as const, background: '#f8fafc', borderBottom: '1px solid #e5e7eb', padding: '8px 10px' };
+const th = {
+  textAlign: 'left' as const,
+  background: '#f8fafc',
+  borderBottom: '1px solid #e5e7eb',
+  padding: '8px 10px',
+};
 const thLeft = { ...th, borderRight: '1px solid #e5e7eb' };
 const thRight = { ...th };
 const tdLeft = { padding: '10px', borderTop: '1px solid #f1f5f9' };
 const td = { padding: '10px', borderTop: '1px solid #f1f5f9' };
-const tdRight = { padding: '10px', borderTop: '1px solid #f1f5f9', textAlign: 'right' as const };
-const btnPrimarySm: React.CSSProperties = { padding: '6px 10px', borderRadius: 8, border: '1px solid #2563eb', background: '#2563eb', color: '#fff', fontWeight: 700, cursor: 'pointer', marginRight: 6 };
-const btnGhostSm: React.CSSProperties = { padding: '6px 10px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', color: '#111', cursor: 'pointer' };
+const tdRight = {
+  padding: '10px',
+  borderTop: '1px solid #f1f5f9',
+  textAlign: 'right' as const,
+};
+const btnPrimarySm: React.CSSProperties = {
+  padding: '6px 10px',
+  borderRadius: 8,
+  border: '1px solid #2563eb',
+  background: '#2563eb',
+  color: '#fff',
+  fontWeight: 700,
+  cursor: 'pointer',
+  marginRight: 6,
+};
+const btnGhostSm: React.CSSProperties = {
+  padding: '6px 10px',
+  borderRadius: 8,
+  border: '1px solid #e5e7eb',
+  background: '#fff',
+  color: '#111',
+  cursor: 'pointer',
+};
