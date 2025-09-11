@@ -4,6 +4,7 @@ import TeamRequirements from './TeamRequirements';
 import TeamSchedule from './TeamSchedule';
 import TeamSettings from './TeamSettings';
 import TeamApprovals from './TeamApprovals';
+import TeamMembers from './TeamMembers';
 
 /* ------------ Types ------------ */
 
@@ -16,7 +17,7 @@ type View =
   | 'account-manage'
   | 'team-manage';
 
-type TeamTab = 'requirements' | 'schedule' | 'approvals' | 'settings';
+type TeamTab = 'members' | 'requirements' | 'schedule' | 'approvals' | 'settings';
 
 type SessionT = {
   user: { id: string; email?: string | null } | null;
@@ -442,6 +443,8 @@ export default function App() {
             />
 
             <div style={{ marginTop: 16 }}>
+              {teamTab === 'members' && <TeamMembers />}
+
               {teamTab === 'requirements' && <TeamRequirements />}
 
               {teamTab === 'schedule' && <TeamSchedule />}
@@ -521,11 +524,13 @@ function TeamTabs({
   approvalsEnabled: boolean;
 }) {
   const tabs: { key: TeamTab; label: string; show?: boolean }[] = [
+    { key: 'members', label: 'Members', show: true },
     { key: 'requirements', label: 'Requirements', show: true },
     { key: 'schedule', label: 'Schedule', show: true },
     { key: 'approvals', label: 'Approvals', show: approvalsEnabled },
     { key: 'settings', label: 'Settings', show: true },
   ];
+
   return (
     <div style={tabsWrap}>
       {tabs
