@@ -1,9 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  getBrowserSupabaseClient,
-  setContext,
-  clearContext,
-} from '@servota/shared';
+import { getBrowserSupabaseClient, setContext, clearContext } from '@servota/shared';
 import TeamRequirements from './TeamRequirements';
 import TeamSchedule from './TeamSchedule';
 import TeamSettings from './TeamSettings';
@@ -110,7 +106,6 @@ export default function App() {
       sub.subscription.unsubscribe();
       mounted = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase]);
 
   /* ---- persist/restore team tab per team ---- */
@@ -186,7 +181,7 @@ export default function App() {
       if (tErr) console.warn('teams error:', tErr.message);
       if (tmErr) console.warn('team_memberships error:', tmErr.message);
 
-      const tRows = ((tData ?? []) as unknown) as Team[]; // ← cast via unknown to avoid SelectQueryError union
+      const tRows = (tData ?? []) as unknown as Team[]; // ← cast via unknown to avoid SelectQueryError union
       const tmRows = (tmData ?? []) as TeamMembership[];
 
       if (!cancelled) {
@@ -293,7 +288,6 @@ export default function App() {
   }
 
   const me = session.user.email ?? session.user.id;
-  const approvalsEnabled = allowSwaps && requireApproval;
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', fontFamily }}>
@@ -313,7 +307,11 @@ export default function App() {
           onClick={() => setView('unavailability')}
         />
         <NavItem label="Roster" active={view === 'roster'} onClick={() => setView('roster')} />
-        <NavItem label="Settings" active={view === 'settings'} onClick={() => setView('settings')} />
+        <NavItem
+          label="Settings"
+          active={view === 'settings'}
+          onClick={() => setView('settings')}
+        />
 
         <div style={{ flex: 1 }} />
         <div style={{ fontSize: 12, opacity: 0.7, marginTop: 12 }}>{me}</div>
@@ -383,8 +381,7 @@ export default function App() {
                         role === 'scheduler' ||
                         accounts.find(
                           (a) =>
-                            a.account_id === accountId &&
-                            (a.role === 'owner' || a.role === 'admin')
+                            a.account_id === accountId && (a.role === 'owner' || a.role === 'admin')
                         );
                       const active = t.id === teamId;
                       return (
@@ -453,7 +450,7 @@ export default function App() {
 
               {teamTab === 'settings' && (
                 <TeamSettings
-                  onPolicyChange={(p) => {
+                  onPolicyChange={(p: { allowSwaps: boolean; requireApproval: boolean }) => {
                     setAllowSwaps(!!p.allowSwaps);
                     setRequireApproval(!!p.requireApproval);
                   }}
@@ -520,7 +517,7 @@ function TeamTabs({
   approvalsEnabled,
 }: {
   value: TeamTab;
-  onChange: (v: TeamTab) => void;
+  onChange: any;
   approvalsEnabled: boolean;
 }) {
   const tabs: { key: TeamTab; label: string; show?: boolean }[] = [
