@@ -4,15 +4,19 @@ import { getBrowserSupabaseClient, requireTeamScope } from '@servota/shared';
 
 type AccountUser = {
   user_id: string;
+  display_name: string | null;
   full_name: string | null;
-  role: 'owner' | 'admin' | null; // account-level
+  phone: string | null;
+  role: 'owner' | 'admin' | null;
   status: string | null;
 };
 
 type TeamMember = {
   user_id: string;
+  display_name: string | null;
   full_name: string | null;
-  role: 'scheduler' | 'member' | null; // team-level
+  phone: string | null;
+  role: 'scheduler' | 'member' | null;
   status: string | null;
 };
 
@@ -34,7 +38,7 @@ export default function TeamMembers() {
       setLoading(true);
       setErr(null);
       try {
-        // 1) Pull bare memberships (no joins)
+        // 1) Read bare membership rows (no FK joins)
         const [{ data: am, error: amErr }, { data: tm, error: tmErr }] = await Promise.all([
           supabase
             .from('account_memberships')
@@ -54,36 +58,53 @@ export default function TeamMembers() {
         const amRows = (am ?? []) as any[];
         const tmRows = (tm ?? []) as any[];
 
-        // 2) Fetch profiles via IN(user_id) — only full_name (no email column here)
+        // 2) Profiles via IN(user_id) — use display_name + phone
         const ids = Array.from(
           new Set([...amRows.map((r: any) => r.user_id), ...tmRows.map((r: any) => r.user_id)])
         );
-        const profMap = new Map<string, { full_name: string | null }>();
+        const profMap = new Map<
+          string,
+          { display_name: string | null; full_name: string | null; phone: string | null }
+        >();
         if (ids.length > 0) {
           const { data: profs, error: pErr } = await supabase
             .from('profiles')
-            .select('user_id, full_name')
+            .select('user_id, display_name, full_name, phone')
             .in('user_id', ids);
           if (pErr) throw pErr;
           for (const p of (profs ?? []) as any[]) {
-            profMap.set(p.user_id, { full_name: p.full_name ?? null });
+            profMap.set(p.user_id, {
+              display_name: p.display_name ?? null,
+              full_name: p.full_name ?? null,
+              phone: p.phone ?? null,
+            });
           }
         }
 
-        // 3) Hydrate account users & team members with names
-        const acctUsers: AccountUser[] = amRows.map((r: any) => ({
-          user_id: r.user_id,
-          full_name: profMap.get(r.user_id)?.full_name ?? null,
-          role: r.role ?? null,
-          status: r.status ?? null,
-        }));
+        // 3) Hydrate lists
+        const acctUsers: AccountUser[] = amRows.map((r: any) => {
+          const p = profMap.get(r.user_id);
+          return {
+            user_id: r.user_id,
+            display_name: p?.display_name ?? null,
+            full_name: p?.full_name ?? null,
+            phone: p?.phone ?? null,
+            role: r.role ?? null,
+            status: r.status ?? null,
+          };
+        });
 
-        const teamMems: TeamMember[] = tmRows.map((r: any) => ({
-          user_id: r.user_id,
-          full_name: profMap.get(r.user_id)?.full_name ?? null,
-          role: r.role ?? null,
-          status: r.status ?? null,
-        }));
+        const teamMems: TeamMember[] = tmRows.map((r: any) => {
+          const p = profMap.get(r.user_id);
+          return {
+            user_id: r.user_id,
+            display_name: p?.display_name ?? null,
+            full_name: p?.full_name ?? null,
+            phone: p?.phone ?? null,
+            role: r.role ?? null,
+            status: r.status ?? null,
+          };
+        });
 
         if (!cancelled) {
           setAccountUsers(acctUsers);
@@ -111,24 +132,36 @@ export default function TeamMembers() {
       if (tmErr) throw tmErr;
 
       const ids = Array.from(new Set((tm ?? []).map((r: any) => r.user_id)));
-      const profMap = new Map<string, { full_name: string | null }>();
+      const profMap = new Map<
+        string,
+        { display_name: string | null; full_name: string | null; phone: string | null }
+      >();
       if (ids.length > 0) {
         const { data: profs, error: pErr } = await supabase
           .from('profiles')
-          .select('user_id, full_name')
+          .select('user_id, display_name, full_name, phone')
           .in('user_id', ids);
         if (pErr) throw pErr;
         for (const p of (profs ?? []) as any[]) {
-          profMap.set(p.user_id, { full_name: p.full_name ?? null });
+          profMap.set(p.user_id, {
+            display_name: p.display_name ?? null,
+            full_name: p.full_name ?? null,
+            phone: p.phone ?? null,
+          });
         }
       }
 
-      const teamMems = (tm ?? []).map((r: any) => ({
-        user_id: r.user_id,
-        full_name: profMap.get(r.user_id)?.full_name ?? null,
-        role: r.role ?? null,
-        status: r.status ?? null,
-      })) as TeamMember[];
+      const teamMems = (tm ?? []).map((r: any) => {
+        const p = profMap.get(r.user_id);
+        return {
+          user_id: r.user_id,
+          display_name: p?.display_name ?? null,
+          full_name: p?.full_name ?? null,
+          phone: p?.phone ?? null,
+          role: r.role ?? null,
+          status: r.status ?? null,
+        } as TeamMember;
+      });
 
       setTeamMembers(teamMems);
     } catch (e: any) {
@@ -213,16 +246,19 @@ export default function TeamMembers() {
               />
             </div>
             <div style={list}>
-              {teamMembers.filter((m) => filter(m.full_name ?? m.user_id)).length === 0 ? (
+              {teamMembers.filter((m) => filter(m.display_name ?? m.full_name ?? m.user_id))
+                .length === 0 ? (
                 <div style={{ opacity: 0.6 }}>No matches.</div>
               ) : (
                 teamMembers
-                  .filter((m) => filter(m.full_name ?? m.user_id))
+                  .filter((m) => filter(m.display_name ?? m.full_name ?? m.user_id))
                   .map((m) => (
                     <div key={m.user_id} style={row}>
                       <div style={colMain}>
-                        <div style={{ fontWeight: 700 }}>{m.full_name || m.user_id}</div>
-                        <div style={muted}>{m.user_id}</div>
+                        <div style={{ fontWeight: 700 }}>
+                          {m.display_name || m.full_name || m.user_id}
+                        </div>
+                        {m.phone ? <div style={muted}>{m.phone}</div> : null}
                       </div>
                       <div style={colActions}>
                         <select
@@ -260,8 +296,10 @@ export default function TeamMembers() {
                 available.map((u) => (
                   <div key={u.user_id} style={row}>
                     <div style={colMain}>
-                      <div style={{ fontWeight: 700 }}>{u.full_name || u.user_id}</div>
-                      <div style={muted}>{u.user_id}</div>
+                      <div style={{ fontWeight: 700 }}>
+                        {u.display_name || u.full_name || u.user_id}
+                      </div>
+                      {u.phone ? <div style={muted}>{u.phone}</div> : null}
                     </div>
                     <div style={colActions}>
                       <button style={btnPrimarySm} onClick={() => addToTeam(u.user_id)}>
