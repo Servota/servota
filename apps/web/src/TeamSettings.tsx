@@ -5,15 +5,14 @@ import { getBrowserSupabaseClient, requireTeamScope } from '@servota/shared';
 type TeamRow = {
   id: string;
   allow_swaps: boolean | null;
-  roster_visibility: 'team' | 'account' | 'private' | null;
-  swap_requires_approval?: boolean | null; // optional until types regenerate
+  // roster_visibility removed from UI
+  swap_requires_approval?: boolean | null;
 };
 
 export default function TeamSettings({
-  // NOTE: typed as any to avoid ESLint flagging parameter names in function types.
   onPolicyChange,
 }: {
-  onPolicyChange?: any;
+  onPolicyChange?: any; // keep loose to avoid ESLint param-name rules
 }) {
   const supabase = useMemo(() => getBrowserSupabaseClient(), []);
   const { accountId, teamId } = requireTeamScope();
@@ -24,9 +23,8 @@ export default function TeamSettings({
 
   const emitPolicy = (r: TeamRow | null) => {
     if (!onPolicyChange || !r) return;
-    // Safe call; caller receives { allowSwaps, requireApproval }
     onPolicyChange({
-      allowSwaps: !!r.allow_swaps,
+      allowSwaps: !!(r as any).allow_swaps,
       requireApproval: !!(r as any).swap_requires_approval,
     });
   };
@@ -35,9 +33,10 @@ export default function TeamSettings({
     setLoading(true);
     setErr(null);
     try {
+      // select only the policy fields we still use
       const { data, error } = await supabase
         .from('teams')
-        .select<any>('id, allow_swaps, roster_visibility, swap_requires_approval')
+        .select<any>('id, allow_swaps, swap_requires_approval')
         .eq('account_id', accountId)
         .eq('id', teamId)
         .maybeSingle();
@@ -63,12 +62,15 @@ export default function TeamSettings({
     const optimistic: TeamRow = { ...row, ...patch };
     setRow(optimistic);
     try {
-      const { error } = await supabase.from('teams').update(patch as any).eq('id', row.id);
+      const { error } = await supabase
+        .from('teams')
+        .update(patch as any)
+        .eq('id', row.id);
       if (error) {
         await load();
         if (String(error.message).includes('swap_requires_approval')) {
           alert(
-            "Your database is missing teams.swap_requires_approval.\n\nRun:\n  alter table public.teams add column swap_requires_approval boolean default false;"
+            'Your database is missing teams.swap_requires_approval.\n\nRun:\n  alter table public.teams add column swap_requires_approval boolean default false;'
           );
         } else {
           alert(error.message);
@@ -99,8 +101,8 @@ export default function TeamSettings({
             control={
               <input
                 type="checkbox"
-                checked={!!row.allow_swaps}
-                onChange={(e) => upd({ allow_swaps: e.currentTarget.checked })}
+                checked={!!(row as any).allow_swaps}
+                onChange={(e) => upd({ allow_swaps: e.currentTarget.checked } as any)}
               />
             }
           />
@@ -111,31 +113,10 @@ export default function TeamSettings({
               <input
                 type="checkbox"
                 checked={!!(row as any).swap_requires_approval}
-                onChange={(e) =>
-                  upd({ swap_requires_approval: e.currentTarget.checked } as any)
-                }
+                onChange={(e) => upd({ swap_requires_approval: e.currentTarget.checked } as any)}
                 disabled={!row.allow_swaps}
                 title={!row.allow_swaps ? 'Enable Allow swaps first' : undefined}
               />
-            }
-          />
-          <SettingRow
-            label="Roster visibility"
-            hint="Who can view the team roster."
-            control={
-              <select
-                value={row.roster_visibility ?? 'team'}
-                onChange={(e) =>
-                  upd({
-                    roster_visibility:
-                      e.currentTarget.value as TeamRow['roster_visibility'],
-                  })
-                }
-              >
-                <option value="team">Team</option>
-                <option value="account">Account</option>
-                <option value="private">Private</option>
-              </select>
             }
           />
         </div>
