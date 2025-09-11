@@ -5,7 +5,6 @@ import { getBrowserSupabaseClient, requireTeamScope } from '@servota/shared';
 type AccountUser = {
   user_id: string;
   full_name: string | null;
-  email: string | null;
   role: 'owner' | 'admin' | null; // account-level
   status: string | null;
 };
@@ -13,7 +12,6 @@ type AccountUser = {
 type TeamMember = {
   user_id: string;
   full_name: string | null;
-  email: string | null;
   role: 'scheduler' | 'member' | null; // team-level
   status: string | null;
 };
@@ -36,51 +34,53 @@ export default function TeamMembers() {
       setLoading(true);
       setErr(null);
       try {
-        // Account users (active) with names
-        const { data: au, error: auErr } = await supabase
-          .from('account_memberships')
-          .select(
-            `
-            user_id,
-            role,
-            status,
-            profiles:user_id ( full_name, email )
-          `
-          )
-          .eq('account_id', accountId)
-          .eq('status', 'active');
+        // 1) Pull bare memberships (no joins)
+        const [{ data: am, error: amErr }, { data: tm, error: tmErr }] = await Promise.all([
+          supabase
+            .from('account_memberships')
+            .select('user_id, role, status')
+            .eq('account_id', accountId)
+            .eq('status', 'active'),
+          supabase
+            .from('team_memberships')
+            .select('user_id, role, status')
+            .eq('account_id', accountId)
+            .eq('team_id', teamId)
+            .eq('status', 'active'),
+        ]);
+        if (amErr) throw amErr;
+        if (tmErr) throw tmErr;
 
-        if (auErr) throw auErr;
+        const amRows = (am ?? []) as any[];
+        const tmRows = (tm ?? []) as any[];
 
-        const acctUsers: AccountUser[] = (au ?? []).map((r: any) => ({
+        // 2) Fetch profiles via IN(user_id) — only full_name (no email column here)
+        const ids = Array.from(
+          new Set([...amRows.map((r: any) => r.user_id), ...tmRows.map((r: any) => r.user_id)])
+        );
+        const profMap = new Map<string, { full_name: string | null }>();
+        if (ids.length > 0) {
+          const { data: profs, error: pErr } = await supabase
+            .from('profiles')
+            .select('user_id, full_name')
+            .in('user_id', ids);
+          if (pErr) throw pErr;
+          for (const p of (profs ?? []) as any[]) {
+            profMap.set(p.user_id, { full_name: p.full_name ?? null });
+          }
+        }
+
+        // 3) Hydrate account users & team members with names
+        const acctUsers: AccountUser[] = amRows.map((r: any) => ({
           user_id: r.user_id,
-          full_name: r.profiles?.full_name ?? null,
-          email: r.profiles?.email ?? null,
+          full_name: profMap.get(r.user_id)?.full_name ?? null,
           role: r.role ?? null,
           status: r.status ?? null,
         }));
 
-        // Team members (active) with names
-        const { data: tm, error: tmErr } = await supabase
-          .from('team_memberships')
-          .select(
-            `
-            user_id,
-            role,
-            status,
-            profiles:user_id ( full_name, email )
-          `
-          )
-          .eq('account_id', accountId)
-          .eq('team_id', teamId)
-          .eq('status', 'active');
-
-        if (tmErr) throw tmErr;
-
-        const teamMems: TeamMember[] = (tm ?? []).map((r: any) => ({
+        const teamMems: TeamMember[] = tmRows.map((r: any) => ({
           user_id: r.user_id,
-          full_name: r.profiles?.full_name ?? null,
-          email: r.profiles?.email ?? null,
+          full_name: profMap.get(r.user_id)?.full_name ?? null,
           role: r.role ?? null,
           status: r.status ?? null,
         }));
@@ -101,29 +101,39 @@ export default function TeamMembers() {
   }, [supabase, accountId, teamId]);
 
   const refreshTeamMembers = async () => {
-    const { data: tm, error: tmErr } = await supabase
-      .from('team_memberships')
-      .select(
-        `
-        user_id,
-        role,
-        status,
-        profiles:user_id ( full_name, email )
-      `
-      )
-      .eq('account_id', accountId)
-      .eq('team_id', teamId)
-      .eq('status', 'active');
-    if (tmErr) throw tmErr;
-    setTeamMembers(
-      (tm ?? []).map((r: any) => ({
+    try {
+      const { data: tm, error: tmErr } = await supabase
+        .from('team_memberships')
+        .select('user_id, role, status')
+        .eq('account_id', accountId)
+        .eq('team_id', teamId)
+        .eq('status', 'active');
+      if (tmErr) throw tmErr;
+
+      const ids = Array.from(new Set((tm ?? []).map((r: any) => r.user_id)));
+      const profMap = new Map<string, { full_name: string | null }>();
+      if (ids.length > 0) {
+        const { data: profs, error: pErr } = await supabase
+          .from('profiles')
+          .select('user_id, full_name')
+          .in('user_id', ids);
+        if (pErr) throw pErr;
+        for (const p of (profs ?? []) as any[]) {
+          profMap.set(p.user_id, { full_name: p.full_name ?? null });
+        }
+      }
+
+      const teamMems = (tm ?? []).map((r: any) => ({
         user_id: r.user_id,
-        full_name: r.profiles?.full_name ?? null,
-        email: r.profiles?.email ?? null,
+        full_name: profMap.get(r.user_id)?.full_name ?? null,
         role: r.role ?? null,
         status: r.status ?? null,
-      }))
-    );
+      })) as TeamMember[];
+
+      setTeamMembers(teamMems);
+    } catch (e: any) {
+      setErr(e?.message ?? 'Failed to refresh team members');
+    }
   };
 
   const addToTeam = async (userId: string) => {
@@ -131,7 +141,7 @@ export default function TeamMembers() {
       await supabase.from('team_memberships').insert({
         account_id: accountId,
         team_id: teamId,
-        user_id: userId,
+        user_id: userId, // explicit
         role: 'member',
         status: 'active',
       } as any);
@@ -172,7 +182,7 @@ export default function TeamMembers() {
     }
   };
 
-  // Compute lists
+  // Lists
   const teamIds = new Set(teamMembers.map((m) => m.user_id));
   const available = accountUsers.filter((u) => !teamIds.has(u.user_id));
 
@@ -191,7 +201,7 @@ export default function TeamMembers() {
         <div style={{ padding: 10, color: '#b91c1c' }}>{err}</div>
       ) : (
         <div style={gridWrap}>
-          {/* Left: Team members */}
+          {/* In this team */}
           <div style={panel}>
             <div style={panelHead}>
               <strong>In this team</strong>
@@ -203,16 +213,16 @@ export default function TeamMembers() {
               />
             </div>
             <div style={list}>
-              {teamMembers.filter((m) => filter(m.full_name ?? m.email ?? '')).length === 0 ? (
+              {teamMembers.filter((m) => filter(m.full_name ?? m.user_id)).length === 0 ? (
                 <div style={{ opacity: 0.6 }}>No matches.</div>
               ) : (
                 teamMembers
-                  .filter((m) => filter(m.full_name ?? m.email ?? ''))
+                  .filter((m) => filter(m.full_name ?? m.user_id))
                   .map((m) => (
                     <div key={m.user_id} style={row}>
                       <div style={colMain}>
-                        <div style={{ fontWeight: 700 }}>{m.full_name || m.email || m.user_id}</div>
-                        <div style={muted}>{m.email}</div>
+                        <div style={{ fontWeight: 700 }}>{m.full_name || m.user_id}</div>
+                        <div style={muted}>{m.user_id}</div>
                       </div>
                       <div style={colActions}>
                         <select
@@ -238,7 +248,7 @@ export default function TeamMembers() {
             </div>
           </div>
 
-          {/* Right: Available in account (not in team) */}
+          {/* Available in account (not in team) */}
           <div style={panel}>
             <div style={panelHead}>
               <strong>Available (in account)</strong>
@@ -250,10 +260,8 @@ export default function TeamMembers() {
                 available.map((u) => (
                   <div key={u.user_id} style={row}>
                     <div style={colMain}>
-                      <div style={{ fontWeight: 700 }}>{u.full_name || u.email || u.user_id}</div>
-                      <div style={muted}>
-                        {u.email} {u.role ? `• ${u.role}` : ''}
-                      </div>
+                      <div style={{ fontWeight: 700 }}>{u.full_name || u.user_id}</div>
+                      <div style={muted}>{u.user_id}</div>
                     </div>
                     <div style={colActions}>
                       <button style={btnPrimarySm} onClick={() => addToTeam(u.user_id)}>
