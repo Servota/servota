@@ -37,60 +37,38 @@ export default function TeamMembers() {
     setLoading(true);
     setErr(null);
     try {
-      // 1) bare membership rows (no FK joins)
-      const [{ data: am, error: amErr }, { data: tm, error: tmErr }] = await Promise.all([
-        supabase
-          .from('account_memberships')
-          .select('user_id, role, status')
-          .eq('account_id', accountId)
-          .eq('status', 'active'),
-        supabase
-          .from('team_memberships')
-          .select('user_id, role, status')
-          .eq('account_id', accountId)
-          .eq('team_id', teamId)
-          .eq('status', 'active'),
-      ]);
-      if (amErr) throw amErr;
+      // 1) team members (bare rows)
+      const { data: tm, error: tmErr } = await supabase
+        .from('team_memberships')
+        .select('user_id, role, status')
+        .eq('account_id', accountId)
+        .eq('team_id', teamId)
+        .eq('status', 'active');
       if (tmErr) throw tmErr;
-
-      const amRows = (am ?? []) as any[];
       const tmRows = (tm ?? []) as any[];
 
-      // 2) fetch profiles via IN(user_id) — use full_name/phone only
-      const ids = Array.from(
-        new Set([...amRows.map((r: any) => r.user_id), ...tmRows.map((r: any) => r.user_id)])
-      );
-      const profMap = new Map<string, { full_name: string | null; phone: string | null }>();
-      if (ids.length > 0) {
-        const { data: profs, error: pErr } = await supabase
-          .from('profiles')
-          .select('user_id, full_name, phone')
-          .in('user_id', ids);
-        if (pErr) throw pErr;
-        for (const p of (profs ?? []) as any[]) {
-          profMap.set(p.user_id, {
-            full_name: p.full_name ?? null,
-            phone: p.phone ?? null,
-          });
-        }
-      }
-
-      // 3) hydrate lists (derive display = full_name ?? user_id)
-      const acctUsers: AccountUser[] = amRows.map((r: any) => {
-        const p = profMap.get(r.user_id);
-        const full = p?.full_name ?? null;
-        return {
-          user_id: r.user_id,
-          display: full ?? r.user_id,
-          full_name: full,
-          phone: p?.phone ?? null,
-          role: (r.role as AccountUser['role']) ?? null,
-          status: r.status ?? null,
-        };
+      // 2) account members via RPC (bypasses RLS safely)
+      const { data: am, error: amErr } = await (supabase as any).rpc('get_account_members', {
+        p_account_id: accountId,
       });
 
-      const teamMems: TeamMember[] = tmRows.map((r: any) => {
+      if (amErr) throw amErr;
+      const amRows = (am ?? []) as any[];
+
+      // 3) build maps for display/phone (already included from RPC)
+      const acctUsers = amRows.map((r: any) => ({
+        user_id: r.user_id as string,
+        display: (r.display_name as string) ?? (r.full_name as string) ?? (r.user_id as string),
+        full_name: (r.full_name as string) ?? null,
+        phone: (r.phone as string) ?? null,
+        role: (r.role as any) ?? null,
+        status: (r.status as any) ?? null,
+      })) as AccountUser[];
+
+      const profMap = new Map<string, { full_name: string | null; phone: string | null }>();
+      // (not strictly needed now since RPC provided profile data)
+
+      const teamMems = tmRows.map((r: any) => {
         const p = profMap.get(r.user_id);
         const full = p?.full_name ?? null;
         return {
@@ -100,7 +78,7 @@ export default function TeamMembers() {
           phone: p?.phone ?? null,
           role: (r.role as TeamMember['role']) ?? null,
           status: r.status ?? null,
-        };
+        } as TeamMember;
       });
 
       setAccountUsers(acctUsers);
