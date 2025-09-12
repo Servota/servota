@@ -4,19 +4,19 @@ import { getBrowserSupabaseClient, requireTeamScope } from '@servota/shared';
 
 type AccountUser = {
   user_id: string;
-  display_name: string | null;
+  display: string; // derived label for UI
   full_name: string | null;
   phone: string | null;
-  role: 'owner' | 'admin' | null;
+  role: 'owner' | 'admin' | 'viewer' | null; // account-level
   status: string | null;
 };
 
 type TeamMember = {
   user_id: string;
-  display_name: string | null;
+  display: string; // derived label for UI
   full_name: string | null;
   phone: string | null;
-  role: 'scheduler' | 'member' | null;
+  role: 'scheduler' | 'member' | null; // team-level
   status: string | null;
 };
 
@@ -32,153 +32,103 @@ export default function TeamMembers() {
 
   const [q, setQ] = useState('');
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setErr(null);
-      try {
-        // 1) Read bare membership rows (no FK joins)
-        const [{ data: am, error: amErr }, { data: tm, error: tmErr }] = await Promise.all([
-          supabase
-            .from('account_memberships')
-            .select('user_id, role, status')
-            .eq('account_id', accountId)
-            .eq('status', 'active'),
-          supabase
-            .from('team_memberships')
-            .select('user_id, role, status')
-            .eq('account_id', accountId)
-            .eq('team_id', teamId)
-            .eq('status', 'active'),
-        ]);
-        if (amErr) throw amErr;
-        if (tmErr) throw tmErr;
-
-        const amRows = (am ?? []) as any[];
-        const tmRows = (tm ?? []) as any[];
-
-        // 2) Profiles via IN(user_id) — use display_name + phone
-        const ids = Array.from(
-          new Set([...amRows.map((r: any) => r.user_id), ...tmRows.map((r: any) => r.user_id)])
-        );
-        const profMap = new Map<
-          string,
-          { display_name: string | null; full_name: string | null; phone: string | null }
-        >();
-        if (ids.length > 0) {
-          const { data: profs, error: pErr } = await supabase
-            .from('profiles')
-            .select('user_id, display_name, full_name, phone')
-            .in('user_id', ids);
-          if (pErr) throw pErr;
-          for (const p of (profs ?? []) as any[]) {
-            profMap.set(p.user_id, {
-              display_name: p.display_name ?? null,
-              full_name: p.full_name ?? null,
-              phone: p.phone ?? null,
-            });
-          }
-        }
-
-        // 3) Hydrate lists
-        const acctUsers: AccountUser[] = amRows.map((r: any) => {
-          const p = profMap.get(r.user_id);
-          return {
-            user_id: r.user_id,
-            display_name: p?.display_name ?? null,
-            full_name: p?.full_name ?? null,
-            phone: p?.phone ?? null,
-            role: r.role ?? null,
-            status: r.status ?? null,
-          };
-        });
-
-        const teamMems: TeamMember[] = tmRows.map((r: any) => {
-          const p = profMap.get(r.user_id);
-          return {
-            user_id: r.user_id,
-            display_name: p?.display_name ?? null,
-            full_name: p?.full_name ?? null,
-            phone: p?.phone ?? null,
-            role: r.role ?? null,
-            status: r.status ?? null,
-          };
-        });
-
-        if (!cancelled) {
-          setAccountUsers(acctUsers);
-          setTeamMembers(teamMems);
-        }
-      } catch (e: any) {
-        if (!cancelled) setErr(e?.message ?? 'Failed to load members');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase, accountId, teamId]);
-
-  const refreshTeamMembers = async () => {
+  // ----- reusable loader: refresh account users + team members -----
+  const loadAll = async () => {
+    setLoading(true);
+    setErr(null);
     try {
-      const { data: tm, error: tmErr } = await supabase
-        .from('team_memberships')
-        .select('user_id, role, status')
-        .eq('account_id', accountId)
-        .eq('team_id', teamId)
-        .eq('status', 'active');
+      // 1) bare membership rows (no FK joins)
+      const [{ data: am, error: amErr }, { data: tm, error: tmErr }] = await Promise.all([
+        supabase
+          .from('account_memberships')
+          .select('user_id, role, status')
+          .eq('account_id', accountId)
+          .eq('status', 'active'),
+        supabase
+          .from('team_memberships')
+          .select('user_id, role, status')
+          .eq('account_id', accountId)
+          .eq('team_id', teamId)
+          .eq('status', 'active'),
+      ]);
+      if (amErr) throw amErr;
       if (tmErr) throw tmErr;
 
-      const ids = Array.from(new Set((tm ?? []).map((r: any) => r.user_id)));
-      const profMap = new Map<
-        string,
-        { display_name: string | null; full_name: string | null; phone: string | null }
-      >();
+      const amRows = (am ?? []) as any[];
+      const tmRows = (tm ?? []) as any[];
+
+      // 2) fetch profiles via IN(user_id) — use full_name/phone only
+      const ids = Array.from(
+        new Set([...amRows.map((r: any) => r.user_id), ...tmRows.map((r: any) => r.user_id)])
+      );
+      const profMap = new Map<string, { full_name: string | null; phone: string | null }>();
       if (ids.length > 0) {
         const { data: profs, error: pErr } = await supabase
           .from('profiles')
-          .select('user_id, display_name, full_name, phone')
+          .select('user_id, full_name, phone')
           .in('user_id', ids);
         if (pErr) throw pErr;
         for (const p of (profs ?? []) as any[]) {
           profMap.set(p.user_id, {
-            display_name: p.display_name ?? null,
             full_name: p.full_name ?? null,
             phone: p.phone ?? null,
           });
         }
       }
 
-      const teamMems = (tm ?? []).map((r: any) => {
+      // 3) hydrate lists (derive display = full_name ?? user_id)
+      const acctUsers: AccountUser[] = amRows.map((r: any) => {
         const p = profMap.get(r.user_id);
+        const full = p?.full_name ?? null;
         return {
           user_id: r.user_id,
-          display_name: p?.display_name ?? null,
-          full_name: p?.full_name ?? null,
+          display: full ?? r.user_id,
+          full_name: full,
           phone: p?.phone ?? null,
-          role: r.role ?? null,
+          role: (r.role as AccountUser['role']) ?? null,
           status: r.status ?? null,
-        } as TeamMember;
+        };
       });
 
+      const teamMems: TeamMember[] = tmRows.map((r: any) => {
+        const p = profMap.get(r.user_id);
+        const full = p?.full_name ?? null;
+        return {
+          user_id: r.user_id,
+          display: full ?? r.user_id,
+          full_name: full,
+          phone: p?.phone ?? null,
+          role: (r.role as TeamMember['role']) ?? null,
+          status: r.status ?? null,
+        };
+      });
+
+      setAccountUsers(acctUsers);
       setTeamMembers(teamMems);
     } catch (e: any) {
-      setErr(e?.message ?? 'Failed to refresh team members');
+      setErr(e?.message ?? 'Failed to load members');
+    } finally {
+      setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId, teamId, supabase]);
+
+  // ----- mutations -----
 
   const addToTeam = async (userId: string) => {
     try {
       await supabase.from('team_memberships').insert({
         account_id: accountId,
         team_id: teamId,
-        user_id: userId, // explicit
+        user_id: userId,
         role: 'member',
         status: 'active',
       } as any);
-      await refreshTeamMembers();
+      await loadAll(); // refresh both lists so they move from right -> left
     } catch (e: any) {
       alert(e?.message ?? 'Could not add member');
     }
@@ -193,7 +143,7 @@ export default function TeamMembers() {
         .eq('account_id', accountId)
         .eq('team_id', teamId)
         .eq('user_id', userId);
-      await refreshTeamMembers();
+      await loadAll(); // refresh both lists so they move from left -> right
     } catch (e: any) {
       alert(e?.message ?? 'Could not remove member');
     }
@@ -207,20 +157,19 @@ export default function TeamMembers() {
         .eq('account_id', accountId)
         .eq('team_id', teamId)
         .eq('user_id', userId);
-      setTeamMembers((prev) =>
-        prev.map((m) => (m.user_id === userId ? { ...m, role: newRole } : m))
-      );
+      await loadAll(); // keep both lists consistent
     } catch (e: any) {
       alert(e?.message ?? 'Could not update role');
     }
   };
 
-  // Lists
+  // ----- derived lists -----
   const teamIds = new Set(teamMembers.map((m) => m.user_id));
   const available = accountUsers.filter((u) => !teamIds.has(u.user_id));
 
   const filter = (s: string) => (s ?? '').toLowerCase().includes(q.toLowerCase());
 
+  // ----- render -----
   return (
     <section>
       <h2 style={{ marginTop: 0 }}>Team Members</h2>
@@ -246,18 +195,15 @@ export default function TeamMembers() {
               />
             </div>
             <div style={list}>
-              {teamMembers.filter((m) => filter(m.display_name ?? m.full_name ?? m.user_id))
-                .length === 0 ? (
+              {teamMembers.filter((m) => filter(m.display ?? m.user_id)).length === 0 ? (
                 <div style={{ opacity: 0.6 }}>No matches.</div>
               ) : (
                 teamMembers
-                  .filter((m) => filter(m.display_name ?? m.full_name ?? m.user_id))
+                  .filter((m) => filter(m.display ?? m.user_id))
                   .map((m) => (
                     <div key={m.user_id} style={row}>
                       <div style={colMain}>
-                        <div style={{ fontWeight: 700 }}>
-                          {m.display_name || m.full_name || m.user_id}
-                        </div>
+                        <div style={{ fontWeight: 700 }}>{m.display}</div>
                         {m.phone ? <div style={muted}>{m.phone}</div> : null}
                       </div>
                       <div style={colActions}>
@@ -284,7 +230,7 @@ export default function TeamMembers() {
             </div>
           </div>
 
-          {/* Available in account (not in team) */}
+          {/* Available in account */}
           <div style={panel}>
             <div style={panelHead}>
               <strong>Available (in account)</strong>
@@ -296,9 +242,7 @@ export default function TeamMembers() {
                 available.map((u) => (
                   <div key={u.user_id} style={row}>
                     <div style={colMain}>
-                      <div style={{ fontWeight: 700 }}>
-                        {u.display_name || u.full_name || u.user_id}
-                      </div>
+                      <div style={{ fontWeight: 700 }}>{u.display}</div>
                       {u.phone ? <div style={muted}>{u.phone}</div> : null}
                     </div>
                     <div style={colActions}>
