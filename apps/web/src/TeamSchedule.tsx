@@ -37,8 +37,8 @@ type EligibleUser = {
   phone: string | null;
   team_role: 'member' | 'scheduler' | null;
 };
-
 type Assignee = { user_id: string; name: string };
+type AssigneeDetail = { assignment_id: string; user_id: string; name: string };
 
 const WEEKDAYS: { key: WeekKey; label: string }[] = [
   { key: 'SU', label: 'Sun' },
@@ -63,50 +63,44 @@ export default function TeamSchedule() {
   const supabase = useMemo(() => getBrowserSupabaseClient(), []);
   const { accountId, teamId } = requireTeamScope();
 
-  // templates list
+  // Series
   const [templates, setTemplates] = useState<EventTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  // creation modal
+  // Creation modal
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [tplLabel, setTplLabel] = useState('');
   const [rangeFrom, setRangeFrom] = useState(isoDateToday());
   const [rangeTo, setRangeTo] = useState(isoDatePlusDays(56));
-  const [freq, setFreq] = useState<Freq>('1'); // every 1/2/4 weeks
+  const [freq, setFreq] = useState<Freq>('1');
   const [days, setDays] = useState<Record<WeekKey, boolean>>({ ...DEFAULT_DAYS });
-  const [startTime, setStartTime] = useState('10:00'); // HH:mm
+  const [startTime, setStartTime] = useState('10:00');
   const [durationMin, setDurationMin] = useState(60);
   const [capacity, setCapacity] = useState<number | ''>(1);
   const [mode, setMode] = useState<RequirementMode>('ALL_OF');
-
-  // requirements picker
   const [reqs, setReqs] = useState<RequirementRow[]>([]);
   const [selectedReqIds, setSelectedReqIds] = useState<Record<string, boolean>>({});
 
-  // open series
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [events, setEvents] = useState<EventRow[] | null>(null);
-  const [eventsErr, setEventsErr] = useState<string | null>(null);
-  const [eventsLoading, setEventsLoading] = useState(false);
-
-  /* Track assignments for events in the open series */
-  const [assignCounts, setAssignCounts] = useState<Record<string, number>>({});
+  // Accordion state
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [eventsByTpl, setEventsByTpl] = useState<Record<string, EventRow[]>>({});
+  const [countsByEvent, setCountsByEvent] = useState<Record<string, number>>({});
   const [assigneesByEvent, setAssigneesByEvent] = useState<Record<string, Assignee[]>>({});
+  const [eventsLoading, setEventsLoading] = useState<Record<string, boolean>>({});
+  const [eventsErr, setEventsErr] = useState<Record<string, string | null>>({});
 
-  /* Assign modal state */
+  // Assign modal
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignEventId, setAssignEventId] = useState<string | null>(null);
   const [eligibles, setEligibles] = useState<EligibleUser[]>([]);
   const [eligLoading, setEligLoading] = useState(false);
   const [eligQuery, setEligQuery] = useState('');
-
-  /* Current event info inside modal */
   const [currentCapacity, setCurrentCapacity] = useState<number | null>(null);
-  const [currentAssignees, setCurrentAssignees] = useState<Assignee[]>([]);
+  const [currentAssignees, setCurrentAssignees] = useState<AssigneeDetail[]>([]);
 
-  // load templates + requirements
+  // Load series and requirement list
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -147,35 +141,54 @@ export default function TeamSchedule() {
     };
   }, [accountId, teamId, supabase]);
 
-  // open a series to view events + fetch assignments summary (counts + names)
-  async function openTemplate(id: string) {
-    setOpenId(id);
-    setEvents(null);
-    setEventsErr(null);
-    setEventsLoading(true);
-    setAssignCounts({});
-    setAssigneesByEvent({});
+  // Toggle one template; if opening first time, load its events
+  const toggleTemplate = async (tplId: string) => {
+    setExpanded((prev) => ({ ...prev, [tplId]: !prev[tplId] }));
+    const opening = !expanded[tplId];
+    if (opening && !eventsByTpl[tplId]) {
+      await loadEventsForTemplate(tplId);
+    }
+  };
+
+  // Load events + assignment summaries for one template
+  const loadEventsForTemplate = async (tplId: string) => {
+    setEventsLoading((p) => ({ ...p, [tplId]: true }));
+    setEventsErr((p) => ({ ...p, [tplId]: null }));
     try {
       const nowIso = new Date().toISOString();
       const { data: ev, error: evErr } = await supabase
         .from('events')
         .select('id, label, starts_at, ends_at, capacity')
-        .eq('template_id', id)
+        .eq('template_id', tplId)
         .gte('starts_at', nowIso)
         .order('starts_at', { ascending: true })
         .limit(200);
       if (evErr) throw evErr;
       const list = (ev ?? []) as EventRow[];
-      setEvents(list);
+      setEventsByTpl((p) => ({ ...p, [tplId]: list }));
 
       if (list.length > 0) {
         const ids = list.map((e) => e.id);
-        // fetch assignments joined to profiles for these event IDs
+        // Fetch assignments (no joins) and then profiles
         const { data: asg, error: aErr } = await supabase
           .from('assignments')
-          .select('event_id, user_id, profiles:user_id(full_name, display_name)')
+          .select('event_id, user_id')
           .in('event_id', ids);
         if (aErr) throw aErr;
+        const asgRows = (asg ?? []) as { event_id: string; user_id: string }[];
+
+        const uidSet = new Set(asgRows.map((r) => r.user_id));
+        const nameMap = new Map<string, string>();
+        if (uidSet.size > 0) {
+          const { data: profs, error: pErr } = await supabase
+            .from('profiles')
+            .select('user_id, display_name, full_name')
+            .in('user_id', Array.from(uidSet));
+          if (pErr) throw pErr;
+          for (const p of (profs ?? []) as any[]) {
+            nameMap.set(p.user_id, p.display_name ?? p.full_name ?? p.user_id);
+          }
+        }
 
         const counts: Record<string, number> = {};
         const namesMap: Record<string, Assignee[]> = {};
@@ -183,22 +196,24 @@ export default function TeamSchedule() {
           counts[e.id] = 0;
           namesMap[e.id] = [];
         }
-        for (const row of (asg ?? []) as any[]) {
-          counts[row.event_id] = (counts[row.event_id] ?? 0) + 1;
-          const name = row.profiles?.display_name ?? row.profiles?.full_name ?? row.user_id;
-          namesMap[row.event_id].push({ user_id: row.user_id, name });
+        for (const r of asgRows) {
+          counts[r.event_id] = (counts[r.event_id] ?? 0) + 1;
+          namesMap[r.event_id].push({
+            user_id: r.user_id,
+            name: nameMap.get(r.user_id) ?? r.user_id,
+          });
         }
-        setAssignCounts(counts);
-        setAssigneesByEvent(namesMap);
+        setCountsByEvent((p) => ({ ...p, ...counts }));
+        setAssigneesByEvent((p) => ({ ...p, ...namesMap }));
       }
     } catch (e: any) {
-      setEventsErr(e?.message ?? 'Failed to load events');
+      setEventsErr((p) => ({ ...p, [tplId]: e?.message ?? 'Failed to load events' }));
     } finally {
-      setEventsLoading(false);
+      setEventsLoading((p) => ({ ...p, [tplId]: false }));
     }
-  }
+  };
 
-  // delete a series + its events
+  // Delete series + its events
   const deleteTemplate = async (id: string, label?: string | null) => {
     const ok = confirm(
       `Delete this series${label ? ` (“${label}”)` : ''}?\n\nThis will delete ALL events in this series.`
@@ -207,11 +222,7 @@ export default function TeamSchedule() {
     try {
       await supabase.from('events').delete().eq('template_id', id);
       await supabase.from('event_templates').delete().eq('id', id);
-      if (openId === id) {
-        setOpenId(null);
-        setEvents(null);
-      }
-      // refresh list
+      // refresh templates
       const { data, error } = await supabase
         .from('event_templates')
         .select(
@@ -222,12 +233,18 @@ export default function TeamSchedule() {
         .order('label', { ascending: true });
       if (error) throw error;
       setTemplates((data ?? []) as EventTemplate[]);
+      // drop its cached events
+      setEventsByTpl((p) => {
+        const c = { ...p };
+        delete c[id];
+        return c;
+      });
     } catch (e: any) {
       alert(e?.message ?? 'Could not delete series');
     }
   };
 
-  // create series (template + generated events + attach requirements)
+  // Create series (template + generated events + attach requirements)
   const createSeries = async () => {
     if (saving) return;
     setSaving(true);
@@ -260,10 +277,9 @@ export default function TeamSchedule() {
         return;
       }
 
-      const interval = Number(freq); // 1,2,4
+      const interval = Number(freq);
       const rrule = `FREQ=WEEKLY;INTERVAL=${interval};BYDAY=${chosenDays.join(',')}`;
 
-      // 1) Insert template
       const { data: tplIns, error: tplErr } = await supabase
         .from('event_templates')
         .insert({
@@ -282,7 +298,6 @@ export default function TeamSchedule() {
       if (tplErr) throw tplErr;
       const templateId = (tplIns as any).id as string;
 
-      // 2) Generate instances
       const instants = computeWeeklyInstances({
         from,
         to,
@@ -291,8 +306,6 @@ export default function TeamSchedule() {
         intervalWeeks: interval,
         byDays: chosenDays as WeekKey[],
       });
-
-      // 3) Insert events
       const eventsPayload = instants.map(({ startISO, endISO }) => ({
         account_id: accountId,
         team_id: teamId,
@@ -312,7 +325,6 @@ export default function TeamSchedule() {
         if (evErr) throw evErr;
         const newEventIds: string[] = (evIns ?? []).map((r: any) => r.id);
 
-        // 4) Attach requirements to those events
         const pickedReqIds = Object.keys(selectedReqIds).filter((k) => selectedReqIds[k]);
         if (pickedReqIds.length > 0 && newEventIds.length > 0) {
           const evReqPayload = newEventIds.flatMap((eid) =>
@@ -330,9 +342,8 @@ export default function TeamSchedule() {
         }
       }
 
-      // close + refresh + open series
+      // Reset form + refresh templates
       setCreating(false);
-      // reset form fields
       setTplLabel('');
       setRangeFrom(isoDateToday());
       setRangeTo(isoDatePlusDays(56));
@@ -354,7 +365,9 @@ export default function TeamSchedule() {
         .order('label', { ascending: true });
       if (tErr) throw tErr;
       setTemplates((tData ?? []) as EventTemplate[]);
-      await openTemplate(templateId);
+      // Auto-expand the new series
+      setExpanded((p) => ({ ...p, [templateId]: true }));
+      await loadEventsForTemplate(templateId);
     } catch (e: any) {
       alert(e?.message ?? 'Could not create series');
     } finally {
@@ -362,18 +375,50 @@ export default function TeamSchedule() {
     }
   };
 
-  // open Assign modal and load eligible users, plus current assignees & capacity
-  const openAssign = async (eventId: string) => {
+  // --- Assign modal helpers ---
+  const openAssign = async (eventId: string, tplIdForCap?: string) => {
     setAssignOpen(true);
     setAssignEventId(eventId);
     setEligLoading(true);
     setEligibles([]);
     setEligQuery('');
-    setCurrentAssignees(assigneesByEvent[eventId] ?? []);
-    const ev = (events ?? []).find((e) => e.id === eventId);
-    setCurrentCapacity(ev?.capacity ?? null);
 
+    // load current assignees fresh
     try {
+      const { data: asg, error: aErr } = await supabase
+        .from('assignments')
+        .select('id, user_id')
+        .eq('event_id', eventId);
+      if (aErr) throw aErr;
+      const rows = (asg ?? []) as { id: string; user_id: string }[];
+      let details: AssigneeDetail[] = [];
+      if (rows.length > 0) {
+        const uids = rows.map((r) => r.user_id);
+        const { data: profs, error: pErr } = await supabase
+          .from('profiles')
+          .select('user_id, display_name, full_name')
+          .in('user_id', uids);
+        if (pErr) throw pErr;
+        const nameMap = new Map<string, string>();
+        for (const p of (profs ?? []) as any[]) {
+          nameMap.set(p.user_id, p.display_name ?? p.full_name ?? p.user_id);
+        }
+        details = rows.map((r) => ({
+          assignment_id: r.id,
+          user_id: r.user_id,
+          name: nameMap.get(r.user_id) ?? r.user_id,
+        }));
+      }
+      setCurrentAssignees(details);
+
+      // capacity
+      const all = tplIdForCap
+        ? (eventsByTpl[tplIdForCap] ?? [])
+        : Object.values(eventsByTpl).flat();
+      const ev = all.find((e) => e.id === eventId);
+      setCurrentCapacity(ev?.capacity ?? null);
+
+      // eligibles via RPC
       const { data, error } = await (supabase as any).rpc('get_eligible_users_for_event', {
         p_account_id: accountId,
         p_team_id: teamId,
@@ -389,7 +434,6 @@ export default function TeamSchedule() {
     }
   };
 
-  // assign selected user, update local state, keep modal open
   const assignToEvent = async (userId: string) => {
     if (!assignEventId) return;
     const cap = currentCapacity ?? null;
@@ -398,33 +442,34 @@ export default function TeamSchedule() {
       alert('Event is already at capacity.');
       return;
     }
-
     try {
-      await supabase.from('assignments').insert({
-        account_id: accountId,
-        team_id: teamId,
-        event_id: assignEventId,
-        user_id: userId,
-        status: 'confirmed',
-        source: 'manual',
-        assigned_at: new Date().toISOString(),
-      } as any);
+      const { data: inserted, error: insErr } = await supabase
+        .from('assignments')
+        .insert({
+          account_id: accountId,
+          team_id: teamId,
+          event_id: assignEventId,
+          user_id: userId,
+          status: 'confirmed',
+          source: 'manual',
+          assigned_at: new Date().toISOString(),
+        } as any)
+        .select('id')
+        .single();
+      if (insErr) throw insErr;
 
-      // update modal state
       const match = eligibles.find((e) => e.user_id === userId);
       const name = match?.display_name ?? match?.full_name ?? userId;
-      setCurrentAssignees((prev) => [...prev, { user_id: userId, name }]);
+      const newId = (inserted as any).id as string;
+      setCurrentAssignees((prev) => [...prev, { assignment_id: newId, user_id: userId, name }]);
 
-      // refresh counts on main table
-      setAssignCounts((prev) => ({
-        ...prev,
-        [assignEventId]: (prev[assignEventId ?? ''] ?? 0) + 1,
-      }));
+      // update table
+      setCountsByEvent((prev) => ({ ...prev, [assignEventId!]: (prev[assignEventId!] ?? 0) + 1 }));
       setAssigneesByEvent((prev) => {
         const copy = { ...prev };
-        const arr = copy[assignEventId ?? ''] ? [...copy[assignEventId ?? '']] : [];
+        const arr = copy[assignEventId!] ? [...copy[assignEventId!]] : [];
         arr.push({ user_id: userId, name });
-        copy[assignEventId ?? ''] = arr;
+        copy[assignEventId!] = arr;
         return copy;
       });
     } catch (e: any) {
@@ -432,12 +477,46 @@ export default function TeamSchedule() {
     }
   };
 
+  const removeAssignee = async (assignmentId: string, userId: string) => {
+    if (!assignEventId) return;
+    try {
+      await supabase.from('assignments').delete().eq('id', assignmentId);
+      setCurrentAssignees((prev) => prev.filter((a) => a.assignment_id !== assignmentId));
+
+      setCountsByEvent((prev) => ({
+        ...prev,
+        [assignEventId!]: Math.max((prev[assignEventId!] ?? 1) - 1, 0),
+      }));
+      setAssigneesByEvent((prev) => {
+        const copy = { ...prev };
+        copy[assignEventId!] = (copy[assignEventId!] ?? []).filter((a) => a.user_id !== userId);
+        return copy;
+      });
+
+      // make user re-eligible in modal (if RPC already returned them, keep as-is)
+      setEligibles((prev) => {
+        if (prev.some((e) => e.user_id === userId)) return prev;
+        const name = currentAssignees.find((a) => a.user_id === userId)?.name ?? userId;
+        return [
+          ...prev,
+          {
+            user_id: userId,
+            display_name: name,
+            full_name: null,
+            phone: null,
+            team_role: null,
+          } as any,
+        ];
+      });
+    } catch (e: any) {
+      alert(e?.message ?? 'Could not remove assignee');
+    }
+  };
+
   const filteredEligibles = eligibles.filter((e) => {
     const label = (e.display_name ?? e.full_name ?? e.user_id ?? '').toString();
     return label.toLowerCase().includes(eligQuery.toLowerCase());
   });
-
-  const modalFull = currentCapacity !== null && currentAssignees.length >= currentCapacity;
 
   return (
     <section>
@@ -451,7 +530,7 @@ export default function TeamSchedule() {
         Create a recurring series. Each date becomes an event (inherits requirements and settings).
       </p>
 
-      {/* Series list */}
+      {/* Series list (accordion) */}
       <div style={listWrap}>
         {loading ? (
           <div style={{ padding: 10, opacity: 0.8 }}>Loading…</div>
@@ -463,7 +542,7 @@ export default function TeamSchedule() {
           <table style={table}>
             <thead>
               <tr>
-                <th style={thLeft}>Name</th>
+                <th style={thLeft}>Series</th>
                 <th style={th}>When</th>
                 <th style={th}>Start</th>
                 <th style={th}>Duration</th>
@@ -472,84 +551,106 @@ export default function TeamSchedule() {
               </tr>
             </thead>
             <tbody>
-              {templates.map((t) => (
-                <tr key={t.id}>
-                  <td style={tdLeft}>{t.label ?? '(untitled)'}</td>
-                  <td style={td}>{t.rrule ?? '—'}</td>
-                  <td style={td}>{t.start_time ?? '—'}</td>
-                  <td style={td}>{t.duration ?? '—'} min</td>
-                  <td style={td}>{t.requirement_mode ?? 'ALL_OF'}</td>
-                  <td style={tdRight}>
-                    <button style={btnSecondarySm} onClick={() => openTemplate(t.id)}>
-                      Open
-                    </button>
-                    <button style={btnGhostSm} onClick={() => deleteTemplate(t.id, t.label)}>
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {templates.map((t) => {
+                const isOpen = !!expanded[t.id];
+                return (
+                  <React.Fragment key={t.id}>
+                    <tr>
+                      <td style={tdLeft}>
+                        <button
+                          onClick={() => toggleTemplate(t.id)}
+                          style={{
+                            marginRight: 8,
+                            border: '1px solid #e5e7eb',
+                            borderRadius: 6,
+                            padding: '2px 6px',
+                            background: '#fff',
+                            cursor: 'pointer',
+                          }}
+                          title={isOpen ? 'Collapse' : 'Expand'}
+                        >
+                          {isOpen ? '▼' : '▶'}
+                        </button>
+                        {t.label ?? '(untitled)'}
+                      </td>
+                      <td style={td}>{t.rrule ?? '—'}</td>
+                      <td style={td}>{t.start_time ?? '—'}</td>
+                      <td style={td}>{t.duration ?? '—'} min</td>
+                      <td style={td}>{t.requirement_mode ?? 'ALL_OF'}</td>
+                      <td style={tdRight}>
+                        <button style={btnGhostSm} onClick={() => deleteTemplate(t.id, t.label)}>
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+
+                    {/* Expanded events row */}
+                    {isOpen && (
+                      <tr>
+                        <td colSpan={6} style={{ padding: 0 }}>
+                          <div style={{ borderTop: '1px solid #f1f5f9', background: '#fafafa' }}>
+                            {eventsErr[t.id] ? (
+                              <div style={{ padding: 10, color: '#b91c1c' }}>{eventsErr[t.id]}</div>
+                            ) : eventsLoading[t.id] ? (
+                              <div style={{ padding: 10, opacity: 0.8 }}>Loading…</div>
+                            ) : !(eventsByTpl[t.id] ?? []).length ? (
+                              <div style={{ padding: 10, opacity: 0.8 }}>No upcoming events.</div>
+                            ) : (
+                              <table style={{ ...table, borderTop: '1px solid #e5e7eb' }}>
+                                <thead>
+                                  <tr>
+                                    <th style={thLeft}>Label</th>
+                                    <th style={th}>Starts</th>
+                                    <th style={th}>Ends</th>
+                                    <th style={th}>Capacity</th>
+                                    <th style={th}>Assignees</th>
+                                    <th style={thRight}>Assign</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(eventsByTpl[t.id] ?? []).map((e) => {
+                                    const count = countsByEvent[e.id] ?? 0;
+                                    const cap = e.capacity ?? 0;
+                                    const names = (assigneesByEvent[e.id] ?? [])
+                                      .map((a) => a.name)
+                                      .join(', ');
+                                    return (
+                                      <tr key={e.id}>
+                                        <td style={tdLeft}>{e.label ?? t.label ?? 'Event'}</td>
+                                        <td style={td}>{fmt(e.starts_at)}</td>
+                                        <td style={td}>{fmt(e.ends_at)}</td>
+                                        <td style={td}>{cap ? `${count}/${cap}` : `${count}/—`}</td>
+                                        <td style={td}>{names || '—'}</td>
+                                        <td style={tdRight}>
+                                          <button
+                                            style={btnPrimarySm}
+                                            onClick={() => openAssign(e.id, t.id)}
+                                            title={
+                                              count >= cap && cap !== 0
+                                                ? 'Edit assignments'
+                                                : 'Assign'
+                                            }
+                                          >
+                                            {count >= cap && cap !== 0 ? 'Edit' : 'Assign'}
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
-
-      {/* Open series → Upcoming events */}
-      {openId && (
-        <div style={{ marginTop: 14 }}>
-          <h3 style={{ marginTop: 0 }}>Upcoming dates</h3>
-          <div style={listWrap}>
-            {eventsLoading ? (
-              <div style={{ padding: 10, opacity: 0.8 }}>Loading…</div>
-            ) : eventsErr ? (
-              <div style={{ padding: 10, color: '#b91c1c' }}>{eventsErr}</div>
-            ) : !events || events.length === 0 ? (
-              <div style={{ padding: 10, opacity: 0.8 }}>No upcoming events.</div>
-            ) : (
-              <table style={table}>
-                <thead>
-                  <tr>
-                    <th style={thLeft}>Label</th>
-                    <th style={th}>Starts</th>
-                    <th style={th}>Ends</th>
-                    <th style={th}>Capacity</th>
-                    <th style={th}>Assignees</th>
-                    <th style={thRight}>Assign</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {events.map((e) => {
-                    const count = assignCounts[e.id] ?? 0;
-                    const cap = e.capacity ?? 0;
-                    const names = (assigneesByEvent[e.id] ?? []).map((a) => a.name).join(', ');
-                    return (
-                      <tr key={e.id}>
-                        <td style={tdLeft}>{e.label ?? 'Event'}</td>
-                        <td style={td}>{fmt(e.starts_at)}</td>
-                        <td style={td}>{fmt(e.ends_at)}</td>
-                        <td style={td}>{cap ? `${count}/${cap}` : `${count}/—`}</td>
-                        <td style={td}>{names || '—'}</td>
-                        <td style={tdRight}>
-                          <button
-                            style={btnPrimarySm}
-                            onClick={() => openAssign(e.id)}
-                            disabled={e.capacity !== null && count >= e.capacity}
-                            title={
-                              e.capacity !== null && count >= e.capacity ? 'At capacity' : 'Assign'
-                            }
-                          >
-                            {e.capacity !== null && count >= e.capacity ? 'Full' : 'Assign'}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Create series modal */}
       {creating && (
@@ -680,7 +781,7 @@ export default function TeamSchedule() {
         </div>
       )}
 
-      {/* Assign modal */}
+      {/* Assign / Edit modal */}
       {assignOpen && (
         <div
           style={{
@@ -694,7 +795,7 @@ export default function TeamSchedule() {
         >
           <div
             style={{
-              width: 520,
+              width: 560,
               maxWidth: 'calc(100vw - 24px)',
               background: '#fff',
               borderRadius: 12,
@@ -703,13 +804,55 @@ export default function TeamSchedule() {
             }}
           >
             <h3 style={{ marginTop: 0 }}>
-              Assign to event
+              Edit assignments
               {currentCapacity !== null ? (
                 <span style={{ fontWeight: 400, marginLeft: 8 }}>
                   ({currentAssignees.length}/{currentCapacity})
                 </span>
               ) : null}
             </h3>
+
+            {/* Current assignees with remove buttons */}
+            <div
+              style={{
+                border: '1px solid #f1f5f9',
+                borderRadius: 10,
+                padding: 8,
+                marginBottom: 10,
+              }}
+            >
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Current assignees</div>
+              {currentAssignees.length === 0 ? (
+                <div style={{ opacity: 0.7 }}>None</div>
+              ) : (
+                <div style={{ display: 'grid', gap: 6 }}>
+                  {currentAssignees.map((a) => (
+                    <div
+                      key={a.assignment_id + a.user_id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr auto',
+                        alignItems: 'center',
+                        padding: 6,
+                        border: '1px solid #f1f5f9',
+                        borderRadius: 8,
+                      }}
+                    >
+                      <div>{a.name}</div>
+                      <button
+                        style={btnGhostSm}
+                        onClick={() => removeAssignee(a.assignment_id, a.user_id)}
+                        title="Remove"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Eligible list */}
             {eligLoading ? (
               <div style={{ padding: 8 }}>Loading…</div>
             ) : (
@@ -740,8 +883,9 @@ export default function TeamSchedule() {
                     filteredEligibles.map((u) => {
                       const label = u.display_name ?? u.full_name ?? u.user_id;
                       const alreadyAssigned = currentAssignees.some((a) => a.user_id === u.user_id);
-                      const atCap = modalFull;
-                      const disabled = alreadyAssigned || atCap;
+                      const atCap =
+                        currentCapacity !== null && currentAssignees.length >= currentCapacity;
+                      const disabled = atCap && !alreadyAssigned;
                       return (
                         <div
                           key={u.user_id}
@@ -1041,16 +1185,6 @@ const btnPrimarySm: React.CSSProperties = {
   fontWeight: 700,
   cursor: 'pointer',
 };
-const btnSecondarySm: React.CSSProperties = {
-  padding: '6px 10px',
-  borderRadius: 8,
-  border: '1px solid #e5e7eb',
-  background: '#fff',
-  color: '#111',
-  fontWeight: 700,
-  cursor: 'pointer',
-  marginRight: 6,
-};
 const btnGhostSm: React.CSSProperties = {
   padding: '6px 10px',
   borderRadius: 8,
@@ -1068,7 +1202,7 @@ const modalWrap: React.CSSProperties = {
   zIndex: 50,
 };
 const modalCard: React.CSSProperties = {
-  width: 520,
+  width: 560,
   maxWidth: 'calc(100vw - 24px)',
   background: '#fff',
   borderRadius: 12,
