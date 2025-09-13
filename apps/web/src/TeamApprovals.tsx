@@ -7,8 +7,13 @@ type SwapRow = {
   status: string | null;
   message: string | null;
   created_at: string | null;
-  event_id: string;
-  events?: { label?: string | null; starts_at?: string; ends_at?: string } | null;
+
+  // same-event uses event_id; cross-date uses from/to assignments
+  event_id: string | null;
+  from_assignment_id: string | null;
+  to_assignment_id: string | null;
+
+  events?: { label?: string | null; starts_at?: string | null; ends_at?: string | null } | null;
 };
 
 export default function TeamApprovals() {
@@ -23,6 +28,7 @@ export default function TeamApprovals() {
     setLoading(true);
     setErr(null);
     try {
+      // only show swaps that are waiting for approval
       const { data, error } = await supabase
         .from('swap_requests')
         .select(
@@ -32,6 +38,8 @@ export default function TeamApprovals() {
           message,
           created_at,
           event_id,
+          from_assignment_id,
+          to_assignment_id,
           events:event_id ( label, starts_at, ends_at )
         `
         )
@@ -54,34 +62,40 @@ export default function TeamApprovals() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, teamId]);
 
-  const approve = async (id: string) => {
+  const approve = async (row: SwapRow) => {
     try {
-      // Correct param name: p_swap_request_id
-      const { error } = await supabase.rpc('apply_swap', {
-        p_swap_request_id: id,
-      });
+      // cross-date if both assignment ids are present
+      const isCrossDate = !!row.from_assignment_id && !!row.to_assignment_id;
+
+      const { error } = await (supabase as any).rpc(
+        isCrossDate ? 'apply_cross_date_swap' : 'apply_swap',
+        { p_swap_request_id: row.id }
+      );
       if (error) throw error;
-      setItems((prev) => prev.filter((r) => r.id !== id));
+
+      setItems((prev) => prev.filter((r) => r.id !== row.id));
     } catch (e: any) {
       alert(e?.message ?? 'Could not approve');
     }
   };
 
-  const decline = async (id: string) => {
+  const decline = async (row: SwapRow) => {
     try {
-      // Correct param names: p_swap_request_id, p_action
-      const { error } = await supabase.rpc('respond_swap', {
-        p_swap_request_id: id,
-        p_action: 'decline',
-      });
+      // same RPC for both types: respond_* only cares about id + action
+      const isCrossDate = !!row.from_assignment_id && !!row.to_assignment_id;
+      const { error } = await (supabase as any).rpc(
+        isCrossDate ? 'respond_cross_date_swap' : 'respond_swap',
+        { p_swap_request_id: row.id, p_action: 'decline' }
+      );
       if (error) throw error;
-      setItems((prev) => prev.filter((r) => r.id !== id));
+
+      setItems((prev) => prev.filter((r) => r.id !== row.id));
     } catch (e: any) {
       alert(e?.message ?? 'Could not decline');
     }
   };
 
-  const fmt = (iso?: string) => {
+  const fmt = (iso?: string | null) => {
     if (!iso) return '—';
     const d = new Date(iso);
     const day = d.toLocaleDateString(undefined, {
@@ -119,13 +133,15 @@ export default function TeamApprovals() {
             <tbody>
               {items.map((r) => (
                 <tr key={r.id}>
-                  <td style={tdLeft}>{r.events?.label ?? 'Event'}</td>
+                  <td style={tdLeft}>
+                    {r.events?.label ?? (r.event_id ? 'Event' : 'Cross-date swap')}
+                  </td>
                   <td style={td}>{fmt(r.events?.starts_at)}</td>
                   <td style={tdRight}>
-                    <button style={btnPrimarySm} onClick={() => approve(r.id)}>
+                    <button style={btnPrimarySm} onClick={() => approve(r)}>
                       Approve
                     </button>
-                    <button style={btnGhostSm} onClick={() => decline(r.id)}>
+                    <button style={btnGhostSm} onClick={() => decline(r)} title="Decline">
                       Decline
                     </button>
                   </td>
@@ -147,14 +163,11 @@ const th = {
   padding: '8px 10px',
 };
 const thLeft = { ...th, borderRight: '1px solid #e5e7eb' };
-const thRight = { ...th };
+const thRight = { ...th, textAlign: 'right' as const };
 const tdLeft = { padding: '10px', borderTop: '1px solid #f1f5f9' };
 const td = { padding: '10px', borderTop: '1px solid #f1f5f9' };
-const tdRight = {
-  padding: '10px',
-  borderTop: '1px solid #f1f5f9',
-  textAlign: 'right' as const,
-};
+const tdRight = { padding: '10px', borderTop: '1px solid #f1f5f9', textAlign: 'right' as const };
+
 const btnPrimarySm: React.CSSProperties = {
   padding: '6px 10px',
   borderRadius: 8,
