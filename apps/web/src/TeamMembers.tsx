@@ -4,19 +4,19 @@ import { getBrowserSupabaseClient, requireTeamScope } from '@servota/shared';
 
 type AccountUser = {
   user_id: string;
-  display: string; // derived label for UI
+  display: string; // UI label (display_name || full_name || user_id)
   full_name: string | null;
   phone: string | null;
-  role: 'owner' | 'admin' | 'viewer' | null; // account-level
+  role: 'owner' | 'admin' | 'viewer' | null;
   status: string | null;
 };
 
 type TeamMember = {
   user_id: string;
-  display: string; // derived label for UI
+  display: string; // UI label (full_name || user_id) — team_memberships has no profile fields
   full_name: string | null;
   phone: string | null;
-  role: 'scheduler' | 'member' | null; // team-level
+  role: 'scheduler' | 'member' | null;
   status: string | null;
 };
 
@@ -32,12 +32,12 @@ export default function TeamMembers() {
 
   const [q, setQ] = useState('');
 
-  // ----- reusable loader: refresh account users + team members -----
+  // ---- reusable loader: refresh account users (via RPC) + team members ----
   const loadAll = async () => {
     setLoading(true);
     setErr(null);
     try {
-      // 1) team members (bare rows)
+      // 1) current team members (bare rows)
       const { data: tm, error: tmErr } = await supabase
         .from('team_memberships')
         .select('user_id, role, status')
@@ -51,34 +51,34 @@ export default function TeamMembers() {
       const { data: am, error: amErr } = await (supabase as any).rpc('get_account_members', {
         p_account_id: accountId,
       });
-
       if (amErr) throw amErr;
       const amRows = (am ?? []) as any[];
 
-      // 3) build maps for display/phone (already included from RPC)
-      const acctUsers = amRows.map((r: any) => ({
+      // 3) build right-column list from RPC (display_name/full_name provided)
+      const acctUsers: AccountUser[] = amRows.map((r: any) => ({
         user_id: r.user_id as string,
         display: (r.display_name as string) ?? (r.full_name as string) ?? (r.user_id as string),
         full_name: (r.full_name as string) ?? null,
         phone: (r.phone as string) ?? null,
-        role: (r.role as any) ?? null,
-        status: (r.status as any) ?? null,
-      })) as AccountUser[];
+        role: (r.role as AccountUser['role']) ?? null,
+        status: (r.status as AccountUser['status']) ?? null,
+      }));
 
-      const profMap = new Map<string, { full_name: string | null; phone: string | null }>();
-      // (not strictly needed now since RPC provided profile data)
+      // 4) build left-column list (we can’t join profiles in one go here;
+      //    derive a reasonable display = full_name if we have it from RPC, else UID)
+      const byId = new Map<string, AccountUser>(acctUsers.map((u) => [u.user_id, u]));
 
-      const teamMems = tmRows.map((r: any) => {
-        const p = profMap.get(r.user_id);
-        const full = p?.full_name ?? null;
+      const teamMems: TeamMember[] = tmRows.map((r: any) => {
+        const match = byId.get(r.user_id);
+        const label = match?.display ?? match?.full_name ?? r.user_id; // final fallback
         return {
           user_id: r.user_id,
-          display: full ?? r.user_id,
-          full_name: full,
-          phone: p?.phone ?? null,
+          display: label,
+          full_name: match?.full_name ?? null,
+          phone: match?.phone ?? null,
           role: (r.role as TeamMember['role']) ?? null,
           status: r.status ?? null,
-        } as TeamMember;
+        };
       });
 
       setAccountUsers(acctUsers);
@@ -95,8 +95,7 @@ export default function TeamMembers() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, teamId, supabase]);
 
-  // ----- mutations -----
-
+  // ---- mutations ----
   const addToTeam = async (userId: string) => {
     try {
       await supabase.from('team_memberships').insert({
@@ -106,7 +105,7 @@ export default function TeamMembers() {
         role: 'member',
         status: 'active',
       } as any);
-      await loadAll(); // refresh both lists so they move from right -> left
+      await loadAll(); // move right -> left
     } catch (e: any) {
       alert(e?.message ?? 'Could not add member');
     }
@@ -121,7 +120,7 @@ export default function TeamMembers() {
         .eq('account_id', accountId)
         .eq('team_id', teamId)
         .eq('user_id', userId);
-      await loadAll(); // refresh both lists so they move from left -> right
+      await loadAll(); // move left -> right
     } catch (e: any) {
       alert(e?.message ?? 'Could not remove member');
     }
@@ -141,13 +140,12 @@ export default function TeamMembers() {
     }
   };
 
-  // ----- derived lists -----
+  // ---- derived lists ----
   const teamIds = new Set(teamMembers.map((m) => m.user_id));
   const available = accountUsers.filter((u) => !teamIds.has(u.user_id));
-
   const filter = (s: string) => (s ?? '').toLowerCase().includes(q.toLowerCase());
 
-  // ----- render -----
+  // ---- UI ----
   return (
     <section>
       <h2 style={{ marginTop: 0 }}>Team Members</h2>
