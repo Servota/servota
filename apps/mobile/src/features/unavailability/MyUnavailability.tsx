@@ -73,7 +73,7 @@ export default function MyUnavailability() {
           return;
         }
 
-        // 3) Fall back to first account_membership
+        // 3) Fall back to first active account_membership
         const { data: mems } = await supabase
           .from('account_memberships')
           .select('account_id')
@@ -122,7 +122,7 @@ export default function MyUnavailability() {
     const tt = (d: Date) =>
       d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(' ', '');
     const sameDay = s.toDateString() === e.toDateString();
-    return sameDay ? `${dd(s)} • ${tt(s)}–${tt(e)}` : `${dd(s)} ${tt(s)} → ${dd(e)} ${tt(e)}`;
+    return sameDay ? `${dd(s)} • ${tt(s)}–${tt(e)}` : `${dd(s)} ${tt(s)} — ${dd(e)} ${tt(e)}`;
   };
 
   const confirmRemove = (id: string) => {
@@ -171,39 +171,46 @@ export default function MyUnavailability() {
 
   // Cross-platform date/time pickers
   const pickStart = () =>
-    pickDateTime(startAt, setStartAt, setIosPickerTarget, setIosPickerMode, setIosTemp);
+    pickDateTime('start', startAt, setStartAt, setIosPickerTarget, setIosPickerMode, setIosTemp);
   const pickEnd = () =>
-    pickDateTime(endAt, setEndAt, setIosPickerTarget, setIosPickerMode, setIosTemp);
+    pickDateTime('end', endAt, setEndAt, setIosPickerTarget, setIosPickerMode, setIosTemp);
 
   const Header = () => (
-    <View style={{ padding: 16, gap: 10 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={styles.h1}>My Unavailability</Text>
-        <Pressable onPress={openAdd} style={styles.addBtn} disabled={resolvingAcct}>
-          <Text style={styles.addBtnText}>＋ Add</Text>
-        </Pressable>
-      </View>
-
-      {/* Optional context hint if available; otherwise say nothing */}
-      {ctxAccountId && accountName ? (
-        <Text style={styles.muted}>
-          (Applies across <Text style={{ fontWeight: '700', color: '#111' }}>{accountName}</Text>)
-        </Text>
-      ) : null}
-
-      {error ? <Text style={styles.err}>{error}</Text> : null}
-      {items === null || resolvingAcct ? (
-        <View style={{ paddingVertical: 8 }}>
-          <ActivityIndicator />
+    <View style={{ gap: 14 }}>
+      <View style={styles.card}>
+        <View style={[styles.rowBetween, { alignItems: 'center' }]}>
+          <Text style={styles.h1}>My Unavailability</Text>
+          <Pressable
+            onPress={openAdd}
+            style={styles.primaryBtn}
+            android_ripple={{ color: '#2563eb' }}
+            disabled={resolvingAcct}
+          >
+            <Text style={styles.primaryText}>Add</Text>
+          </Pressable>
         </View>
-      ) : null}
+
+        {/* Optional context hint if available; otherwise say nothing */}
+        {ctxAccountId && accountName ? (
+          <Text style={[styles.meta, { marginTop: 6 }]}>
+            Applies across <Text style={{ fontWeight: '800', color: '#111' }}>{accountName}</Text>
+          </Text>
+        ) : null}
+
+        {error ? <Text style={[styles.meta, { color: '#c00' }]}>{error}</Text> : null}
+        {items === null || resolvingAcct ? (
+          <View style={{ paddingTop: 6 }}>
+            <ActivityIndicator />
+          </View>
+        ) : null}
+      </View>
 
       <Text style={styles.section}>Upcoming</Text>
     </View>
   );
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }}>
       <FlatList
         data={items ?? []}
         keyExtractor={(it) => it.id}
@@ -211,11 +218,15 @@ export default function MyUnavailability() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />}
         ListEmptyComponent={
           items && items.length === 0 ? (
-            <Text style={[styles.muted, { padding: 16 }]}>No future unavailability.</Text>
+            <Text style={[styles.meta, { padding: 16 }]}>No future unavailability.</Text>
           ) : null
         }
         renderItem={({ item }) => (
-          <Pressable onLongPress={() => confirmRemove(item.id)} style={styles.card}>
+          <Pressable
+            onLongPress={() => confirmRemove(item.id)}
+            style={[styles.card, { marginTop: 10 }]}
+            android_ripple={{ color: '#e5e7eb' }}
+          >
             <Text style={styles.cardTitle}>{fmtRange(item.starts_at, item.ends_at)}</Text>
             {item.reason ? <Text style={styles.cardSub}>{item.reason}</Text> : null}
             <Text style={styles.cardHint}>Long-press to remove</Text>
@@ -229,6 +240,7 @@ export default function MyUnavailability() {
           <Pressable style={styles.modalBackdrop} onPress={() => setAddOpen(false)}>
             <View />
           </Pressable>
+
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>Add unavailability</Text>
 
@@ -263,9 +275,7 @@ export default function MyUnavailability() {
                   }}
                   style={{ alignSelf: 'center' }}
                 />
-                <View
-                  style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}
-                >
+                <View style={[styles.rowBetween, { marginTop: 6 }]}>
                   {iosPickerMode === 'time' ? (
                     <Pressable
                       onPress={() => {
@@ -274,23 +284,26 @@ export default function MyUnavailability() {
                         else setEndAt(d);
                         setIosPickerTarget(null);
                       }}
-                      style={[styles.actionBtn, styles.primaryBtn]}
+                      style={styles.primaryBtn}
+                      android_ripple={{ color: '#2563eb' }}
                     >
-                      <Text style={styles.actionText}>Done</Text>
+                      <Text style={styles.primaryText}>Done</Text>
                     </Pressable>
                   ) : (
                     <Pressable
                       onPress={() => setIosPickerMode('time')}
-                      style={[styles.actionBtn, styles.primaryBtn]}
+                      style={styles.primaryBtn}
+                      android_ripple={{ color: '#2563eb' }}
                     >
-                      <Text style={styles.actionText}>Next: Time</Text>
+                      <Text style={styles.primaryText}>Next: Time</Text>
                     </Pressable>
                   )}
                   <Pressable
                     onPress={() => setIosPickerTarget(null)}
-                    style={[styles.actionBtn, styles.secondaryBtn]}
+                    style={styles.secondaryBtn}
+                    android_ripple={{ color: '#e5e7eb' }}
                   >
-                    <Text style={styles.actionText}>Cancel</Text>
+                    <Text style={styles.secondaryText}>Cancel</Text>
                   </Pressable>
                 </View>
               </View>
@@ -298,19 +311,21 @@ export default function MyUnavailability() {
 
             <View style={{ height: 10 }} />
 
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+            <View style={[styles.rowBetween, { gap: 8 }]}>
               <Pressable
                 onPress={() => setAddOpen(false)}
-                style={[styles.actionBtn, styles.secondaryBtn]}
+                style={styles.secondaryBtn}
+                android_ripple={{ color: '#e5e7eb' }}
               >
-                <Text style={styles.actionText}>Close</Text>
+                <Text style={styles.secondaryText}>Close</Text>
               </Pressable>
               <Pressable
                 onPress={saveAdd}
                 disabled={working}
-                style={[styles.actionBtn, styles.primaryBtn]}
+                style={[styles.primaryBtn, working && { opacity: 0.6 }]}
+                android_ripple={{ color: '#2563eb' }}
               >
-                <Text style={styles.actionText}>{working ? 'Saving…' : 'Save'}</Text>
+                <Text style={styles.primaryText}>{working ? 'Saving…' : 'Save'}</Text>
               </Pressable>
             </View>
           </View>
@@ -339,8 +354,9 @@ function fmtDateTimeInline(d: Date) {
   return `${date} • ${time}`;
 }
 
-// Cross-platform "pick a date+time"
+// Cross-platform "pick a date+time" (fixed iOS target handling)
 function pickDateTime(
+  target: 'start' | 'end',
   current: Date,
   setter: (_: Date) => void,
   setIosTarget: (_: 'start' | 'end' | null) => void,
@@ -369,46 +385,69 @@ function pickDateTime(
   } else {
     setIosTemp(current);
     setIosMode('date');
-    setIosTarget('start');
+    setIosTarget(target);
   }
 }
 
-/* ---------- Styles ---------- */
+/* ---------- Styles (mirrors App.tsx tokens) ---------- */
 
 const styles = StyleSheet.create({
-  h1: { fontSize: 22, fontWeight: '800' },
-  section: { fontSize: 14, fontWeight: '700' },
-  muted: { color: '#666' },
-  err: { color: '#c00' },
+  // tokens
+  h1: { fontSize: 18, fontWeight: '700', color: '#111' },
+  section: { fontSize: 14, fontWeight: '800', color: '#111', marginTop: 4, marginBottom: 2 },
+  meta: { fontSize: 13, color: '#6b7280' },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 
-  addBtn: {
+  // buttons (match App.tsx)
+  primaryBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#111',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: '#3b82f6',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    minWidth: 100,
   },
-  addBtnText: { color: '#fff', fontWeight: '800' },
+  primaryText: { color: '#fff', fontWeight: '800' },
+  secondaryBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#eef1f5',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    minWidth: 100,
+  },
+  secondaryText: { color: '#111', fontWeight: '800' },
 
+  // cards (match App.tsx)
   card: {
     borderWidth: 1,
     borderColor: '#ececec',
     borderRadius: 14,
     padding: 12,
-    marginHorizontal: 16,
-    marginTop: 10,
     backgroundColor: '#fff',
     shadowColor: '#000',
     shadowOpacity: 0.06,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
-    gap: 4,
   },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: '#111' },
-  cardSub: { fontSize: 12, color: '#555' },
-  cardHint: { fontSize: 11, color: '#888', marginTop: 2 },
 
-  modalBackdrop: { position: 'absolute', inset: 0, backgroundColor: '#0008' },
+  // list cards
+  cardTitle: { fontSize: 16, fontWeight: '700', color: '#111' },
+  cardSub: { fontSize: 12, color: '#444', marginTop: 2 },
+  cardHint: { fontSize: 11, color: '#6b7280', marginTop: 6 },
+
+  // modal
+  modalBackdrop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: '#0006',
+  },
   modalSheet: {
     position: 'absolute',
     left: 12,
@@ -418,29 +457,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     padding: 12,
     gap: 10,
+    borderWidth: 1,
+    borderColor: '#ececec',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
-  modalTitle: { fontSize: 18, fontWeight: '800' },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: '#111' },
   modalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  modalLabel: { fontSize: 14, fontWeight: '700' },
+  modalLabel: { fontSize: 14, fontWeight: '700', color: '#111' },
   modalValueBtn: {
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: 10,
-    backgroundColor: '#f5f7fb',
+    backgroundColor: '#eef1f5',
   },
   modalValueText: { fontSize: 14, fontWeight: '700', color: '#111' },
 
-  iosPickLabel: { textAlign: 'center', fontWeight: '700', marginBottom: 4 },
-
-  actionBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 100,
-  },
-  primaryBtn: { backgroundColor: '#3b82f6' },
-  secondaryBtn: { backgroundColor: '#eef1f5' },
-  actionText: { color: '#fff', fontWeight: '800' },
+  iosPickLabel: { textAlign: 'center', fontWeight: '700', marginBottom: 4, color: '#111' },
 });

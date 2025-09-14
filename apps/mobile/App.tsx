@@ -715,18 +715,16 @@ const styles = StyleSheet.create({
   logoutBtn: {
     alignSelf: 'center',
     marginTop: 8,
-    marginBottom: 16,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#f3f4f6',
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+    marginBottom: 32,
+    backgroundColor: 'transparent',
+    elevation: 0,
+    shadowOpacity: 0,
   },
-  logoutText: { fontWeight: '700', color: '#111', fontSize: 16 },
+  logoutText: {
+    fontWeight: '700',
+    color: '#111',
+    fontSize: 16,
+  },
 });
 
 export {};
