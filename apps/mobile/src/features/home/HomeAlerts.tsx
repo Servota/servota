@@ -1,6 +1,6 @@
 // apps/mobile/src/features/home/HomeAlerts.tsx
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Modal } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, Alert, Modal } from 'react-native';
 import { useCurrent } from '../../context/CurrentContext';
 import { claimReplacement } from '../../api/replacements';
 import { supabase } from '../../lib/supabase';
@@ -17,17 +17,21 @@ type OfferRow = {
   requester_name: string | null;
 };
 
+const SUPPRESS_TTL_MS = 8000; // suppress reappearance for 8s to avoid flash re-adds
+
 export default function HomeAlerts() {
   const { accountId, teamId } = useCurrent();
 
   // Data state
   const [items, setItems] = useState<OfferRow[] | null>(null);
-  const [loading, setLoading] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [myUserId, setMyUserId] = useState<string | null>(null);
 
   // Modal state
   const [selected, setSelected] = useState<OfferRow | null>(null);
+
+  // Recently-suppressed IDs to prevent flash reappearance
+  const suppressedRef = useRef<Record<string, number>>({}); // request_id -> expiresAt
 
   const scopeKey = useMemo(() => `${accountId ?? 'null'}:${teamId ?? 'null'}`, [accountId, teamId]);
 
@@ -44,6 +48,25 @@ export default function HomeAlerts() {
       .toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
       .replace(' ', '');
 
+  const pruneSuppressed = () => {
+    const now = Date.now();
+    const next: Record<string, number> = {};
+    const prev = suppressedRef.current;
+    for (const [id, until] of Object.entries(prev)) {
+      if (until > now) next[id] = until;
+    }
+    suppressedRef.current = next;
+  };
+
+  const suppressIds = (ids: string[], ttlMs = SUPPRESS_TTL_MS) => {
+    const now = Date.now();
+    const until = now + ttlMs;
+    const map = suppressedRef.current;
+    ids.forEach((id) => {
+      map[id] = Math.max(map[id] ?? 0, until);
+    });
+  };
+
   // ---- Effects ----
 
   // Load current user id once
@@ -58,15 +81,13 @@ export default function HomeAlerts() {
     };
   }, []);
 
-  // Load replacement offers via RPC (scoped)
+  // Load replacement offers via RPC (scoped) — SWR style, no loading UI ever
   useEffect(() => {
     let mounted = true;
     (async () => {
-      // Only show spinner if we already showed visible content
-      if (hasLoadedOnce && (items?.length ?? 0) > 0) setLoading(true);
+      pruneSuppressed();
 
       try {
-        // Omit generics; cast after to keep TS happy in all setups
         const { data, error } = await supabase.rpc('list_replacement_offers', {
           _account_id: accountId ?? null,
           _team_id: teamId ?? null,
@@ -78,25 +99,40 @@ export default function HomeAlerts() {
         const rows: OfferRow[] = (data ?? []) as OfferRow[];
 
         // Exclude my own requests (the requester shouldn’t see their own request)
-        const filtered = myUserId
-          ? rows.filter((r: OfferRow) => r.requester_user_id !== myUserId)
-          : rows;
+        const filteredByMe = myUserId ? rows.filter((r) => r.requester_user_id !== myUserId) : rows;
 
-        setItems(filtered);
+        // Apply suppression: filter out any IDs that were recently removed/hidden
+        const now = Date.now();
+        const suppressed = suppressedRef.current;
+        const swrNext = filteredByMe.filter(
+          (r) => !(suppressed[r.request_id] && suppressed[r.request_id] > now)
+        );
+
+        // Identify disappeared IDs to suppress (avoid quick re-appearance)
+        const prev = items ?? [];
+        const prevIds = new Set(prev.map((p) => p.request_id));
+        const nextIds = new Set(swrNext.map((n) => n.request_id));
+        const disappeared: string[] = [];
+        prevIds.forEach((id) => {
+          if (!nextIds.has(id)) disappeared.push(id);
+        });
+        if (disappeared.length) suppressIds(disappeared);
+
+        // Update the list (keep order stable by starts_at ascending)
+        setItems(swrNext);
       } catch {
-        if (mounted) setItems((prev) => prev ?? null); // keep previous if any
+        // On error, keep previous items (no flicker, no placeholders)
+        // do nothing
       } finally {
-        if (mounted) {
-          setHasLoadedOnce(true);
-          setLoading(false);
-        }
+        if (mounted) setHasLoadedOnce(true);
       }
     })();
+
     return () => {
       mounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, myUserId, hasLoadedOnce]);
+  }, [scopeKey, myUserId]);
 
   // ---- Modal handlers ----
   const openDetails = (row: OfferRow) => setSelected(row);
@@ -111,7 +147,10 @@ export default function HomeAlerts() {
           try {
             await claimReplacement(reqId);
             Alert.alert('Claimed!', 'You have been assigned to this event.');
-            setItems((prev) => (prev ?? []).filter((r) => r.request_id !== reqId)); // optimistic remove
+
+            // Optimistic remove + suppress so it never flashes back in
+            suppressIds([reqId], 5 * 60_000); // 5 min after successful claim
+            setItems((prev) => (prev ?? []).filter((r) => r.request_id !== reqId));
             setSelected(null);
           } catch (e: any) {
             Alert.alert('Could not claim', e?.message ?? 'Please try again.');
@@ -122,13 +161,15 @@ export default function HomeAlerts() {
   };
 
   const onHide = (reqId: string) => {
-    setItems((prev) => (prev ?? []).filter((r) => r.request_id !== reqId)); // local hide only
+    // Local hide only (UI preference). Also suppress for a short time to avoid flash re-add.
+    suppressIds([reqId]);
+    setItems((prev) => (prev ?? []).filter((r) => r.request_id !== reqId));
     setSelected(null);
   };
 
   // ---- Render rules ----
 
-  // Silent first mount
+  // First mount: render nothing (silent)
   if (!hasLoadedOnce) return null;
 
   // No data → render nothing (no empty placeholder)
@@ -141,7 +182,7 @@ export default function HomeAlerts() {
       <View style={styles.card}>
         <View style={styles.row}>
           <Text style={styles.title}>Replacement requests</Text>
-          {loading ? <ActivityIndicator size="small" /> : null}
+          {/* No spinner, ever */}
         </View>
 
         {top.map((r) => (
@@ -179,7 +220,7 @@ export default function HomeAlerts() {
 
             {selected ? (
               <>
-                {/* Date & time layout as requested */}
+                {/* Date & time layout */}
                 <Text style={styles.modalLineTitle}>{selected.label}</Text>
                 <Text style={styles.modalLine}>{fmtDate(selected.starts_at)}</Text>
                 <Text style={styles.modalLine}>
@@ -187,7 +228,6 @@ export default function HomeAlerts() {
                 </Text>
 
                 <View style={{ height: 8 }} />
-
                 <Text style={styles.modalSubtle}>
                   Requested by: {selected.requester_name?.trim() || 'Member'}
                 </Text>
@@ -235,7 +275,6 @@ const styles = StyleSheet.create({
   item: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 6 },
   itemTitle: { fontSize: 14, fontWeight: '700', color: '#111' },
   itemSub: { fontSize: 12, color: '#555' },
-
   detailsBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -243,7 +282,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#1f2937',
   },
   detailsText: { color: '#fff', fontWeight: '800', fontSize: 12 },
-
   moreHint: { fontSize: 12, color: '#666', marginTop: 8, textAlign: 'right' },
 
   // Modal
