@@ -294,32 +294,72 @@ function SignInView({ onSwitchMode }: { onSwitchMode: () => void }) {
 }
 
 function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [working, setWorking] = useState(false);
 
   const signUp = async () => {
-    if (!email || !password || !confirm) {
-      Alert.alert('Missing info', 'Please fill all fields.');
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    const em = email.trim();
+
+    if (!fn || !ln || !em || !password || !confirm) {
+      Alert.alert(
+        'Missing info',
+        'Please fill first name, last name, email, and both password fields.'
+      );
       return;
     }
     if (password !== confirm) {
       Alert.alert('Passwords do not match', 'Please re-enter your password.');
       return;
     }
-    setWorking(true);
-    const { error } = await supabase.auth.signUp({ email, password });
-    setWorking(false);
-    if (error) {
-      Alert.alert('Sign up failed', error.message);
-      return;
+
+    try {
+      setWorking(true);
+
+      // 1) Create auth user (also stash names in metadata)
+      const { data, error } = await supabase.auth.signUp({
+        email: em,
+        password,
+        options: { data: { first_name: fn, last_name: ln } },
+      });
+
+      if (error) {
+        Alert.alert('Sign up failed', error.message);
+        return;
+      }
+
+      // 2) Upsert profile (if we have a user id; for email-confirm flows user may be present without a session)
+      const userId = data.user?.id ?? undefined;
+      if (userId) {
+        const fullName = `${fn} ${ln}`.trim();
+        const { error: profileErr } = await supabase.from('profiles').upsert({
+          user_id: userId,
+          first_name: fn,
+          last_name: ln,
+          full_name: fullName,
+        });
+        if (profileErr) {
+          console.warn('[profiles upsert]', profileErr);
+          Alert.alert(
+            'Heads up',
+            'Account created, but saving your profile name failed. You can update it after signing in.'
+          );
+        }
+      }
+
+      Alert.alert(
+        'Check your email',
+        'We sent you a confirmation link. After confirming, return here to sign in.'
+      );
+      onSwitchMode();
+    } finally {
+      setWorking(false);
     }
-    Alert.alert(
-      'Check your email',
-      'We sent you a confirmation link. After confirming, return here to sign in.'
-    );
-    onSwitchMode();
   };
 
   return (
@@ -327,6 +367,18 @@ function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
       <Text style={styles.title}>Servota</Text>
       <Text style={styles.subtitle}>Create account</Text>
 
+      <TextInput
+        placeholder="First name"
+        value={firstName}
+        onChangeText={setFirstName}
+        style={styles.input}
+      />
+      <TextInput
+        placeholder="Last name"
+        value={lastName}
+        onChangeText={setLastName}
+        style={styles.input}
+      />
       <TextInput
         placeholder="Email"
         autoCapitalize="none"
