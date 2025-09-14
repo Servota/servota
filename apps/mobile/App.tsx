@@ -321,8 +321,9 @@ function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
     try {
       setWorking(true);
 
-      // 1) Create auth user (also stash names in metadata)
-      const { data, error } = await supabase.auth.signUp({
+      // Create auth user and stash names in metadata.
+      // No client write to public.profiles — DB trigger takes care of it.
+      const { error } = await supabase.auth.signUp({
         email: em,
         password,
         options: { data: { first_name: fn, last_name: ln } },
@@ -331,25 +332,6 @@ function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
       if (error) {
         Alert.alert('Sign up failed', error.message);
         return;
-      }
-
-      // 2) Upsert profile (if we have a user id; for email-confirm flows user may be present without a session)
-      const userId = data.user?.id ?? undefined;
-      if (userId) {
-        const fullName = `${fn} ${ln}`.trim();
-        const { error: profileErr } = await supabase.from('profiles').upsert({
-          user_id: userId,
-          first_name: fn,
-          last_name: ln,
-          full_name: fullName,
-        });
-        if (profileErr) {
-          console.warn('[profiles upsert]', profileErr);
-          Alert.alert(
-            'Heads up',
-            'Account created, but saving your profile name failed. You can update it after signing in.'
-          );
-        }
       }
 
       Alert.alert(
