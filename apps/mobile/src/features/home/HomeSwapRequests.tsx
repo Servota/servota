@@ -7,20 +7,17 @@ import { respondCrossDateSwap } from '../../api/swaps';
 
 type Row = {
   id: string;
-  account_name: string | null;
-  team_name: string | null;
-
-  // Requester/recipient (to_user is "you")
+  account_id: string;
+  team_id: string | null;
   from_user_id: string | null;
   to_user_id: string | null;
-
-  // Events: "from" is the requester's shift; "to" is your shift
   from_event_label: string;
   from_starts: string;
   from_ends: string;
   to_event_label: string;
   to_starts: string;
   to_ends: string;
+  requester_name: string | null;
 };
 
 export default function HomeSwapRequests() {
@@ -30,11 +27,9 @@ export default function HomeSwapRequests() {
 
   // Modal
   const [selected, setSelected] = useState<Row | null>(null);
-  const [requesterName, setRequesterName] = useState<string | null>(null);
 
-  const scopeFilter = useMemo(() => ({ accountId, teamId }), [accountId, teamId]);
+  const scopeKey = useMemo(() => `${accountId ?? 'null'}:${teamId ?? 'null'}`, [accountId, teamId]);
 
-  // ---- Helpers ----
   const fmtDate = (iso: string) =>
     new Date(iso).toLocaleDateString(undefined, {
       weekday: 'short',
@@ -47,59 +42,20 @@ export default function HomeSwapRequests() {
       .toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
       .replace(' ', '');
 
-  // ---- Data load (silent; no spinners) ----
+  // Load pending swaps via RPC (silent; no spinners)
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const { data: me, error: meErr } = await supabase.auth.getUser();
-        if (meErr) throw meErr;
-        const uid = me?.user?.id as string;
-
-        // Only PENDING requests where I'm the recipient (to_user_id)
-        let q = supabase
-          .from('swap_requests')
-          .select(
-            `
-            id, status, created_at, from_user_id, to_user_id,
-            accounts:account_id ( id, name ),
-            teams:team_id ( id, name ),
-            from:from_assignment_id (
-              id, event_id, events!inner ( label, starts_at, ends_at )
-            ),
-            to:to_assignment_id (
-              id, event_id, events!inner ( label, starts_at, ends_at )
-            )
-          `
-          )
-          .eq('status', 'pending')
-          .eq('to_user_id', uid)
-          .order('created_at', { ascending: false })
-          .limit(10);
-
-        if (scopeFilter.accountId) q = q.eq('accounts.id', scopeFilter.accountId);
-        if (scopeFilter.teamId) q = q.eq('teams.id', scopeFilter.teamId);
-
-        const { data, error } = await q;
+        const { data, error } = await supabase.rpc('list_pending_swaps', {
+          _account_id: accountId ?? null,
+          _team_id: teamId ?? null,
+          _limit: 10,
+        });
         if (error) throw error;
-
-        const map: Row[] = (data ?? []).map((r: any) => ({
-          id: r.id,
-          account_name: r.accounts?.name ?? null,
-          team_name: r.teams?.name ?? null,
-          from_user_id: r.from_user_id ?? null,
-          to_user_id: r.to_user_id ?? null,
-          from_event_label: r.from?.events?.label ?? 'Event',
-          from_starts: r.from?.events?.starts_at,
-          from_ends: r.from?.events?.ends_at,
-          to_event_label: r.to?.events?.label ?? 'Event',
-          to_starts: r.to?.events?.starts_at,
-          to_ends: r.to?.events?.ends_at,
-        }));
-
-        if (mounted) setRows(map);
+        if (!mounted) return;
+        setRows((data ?? []) as Row[]);
       } catch {
-        // Keep previous rows if any; otherwise remain null (no flicker/placeholders)
         if (mounted) setRows((prev) => prev ?? null);
       } finally {
         if (mounted) setHasLoadedOnce(true);
@@ -108,45 +64,7 @@ export default function HomeSwapRequests() {
     return () => {
       mounted = false;
     };
-  }, [scopeFilter.accountId, scopeFilter.teamId]);
-
-  // Lazy-load the requester's name for the modal (best effort; fallback to "Member")
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      if (!selected?.from_user_id) {
-        setRequesterName(null);
-        return;
-      }
-      try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('display_name, full_name')
-          .eq('user_id', selected.from_user_id)
-          .maybeSingle();
-
-        if (mounted) {
-          if (!error) {
-            const name = (data?.display_name || data?.full_name || '').trim();
-            setRequesterName(name || null);
-          } else {
-            setRequesterName(null);
-          }
-        }
-      } catch {
-        if (mounted) setRequesterName(null);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [selected?.from_user_id]);
-
-  // ---- Actions ----
-  const openDetails = (row: Row) => {
-    setSelected(row);
-    setRequesterName(null);
-  };
+  }, [scopeKey]);
 
   const onRespond = (id: string, action: 'accept' | 'decline') => {
     const title = action === 'accept' ? 'Accept this swap?' : 'Decline this swap?';
@@ -160,7 +78,7 @@ export default function HomeSwapRequests() {
         onPress: async () => {
           try {
             await respondCrossDateSwap(id, action);
-            setRows((prev) => (prev ?? []).filter((x) => x.id !== id)); // remove locally (no flicker)
+            setRows((prev) => (prev ?? []).filter((x) => x.id !== id));
             setSelected(null);
             if (action === 'accept') Alert.alert('Swapped!');
           } catch (e: any) {
@@ -171,9 +89,11 @@ export default function HomeSwapRequests() {
     ]);
   };
 
-  // ---- Render rules ----
-  if (!hasLoadedOnce) return null; // silent first load
-  if (!rows || rows.length === 0) return null; // no empty placeholder
+  const openDetails = (row: Row) => setSelected(row);
+
+  // Render rules
+  if (!hasLoadedOnce) return null;
+  if (!rows || rows.length === 0) return null;
 
   const top = rows.slice(0, 3);
 
@@ -182,7 +102,6 @@ export default function HomeSwapRequests() {
       <View style={styles.card}>
         <View style={styles.row}>
           <Text style={styles.title}>Swap requests</Text>
-          {/* no spinner */}
         </View>
 
         {top.map((r) => (
@@ -225,9 +144,9 @@ export default function HomeSwapRequests() {
 
             {selected ? (
               <>
-                {/* Intro line: "Name has requested to swap their shift" */}
+                {/* Name + clear context */}
                 <Text style={styles.modalIntro}>
-                  {requesterName ?? 'Member'} has requested to swap their shift
+                  {selected.requester_name || 'Member'} has requested to swap
                 </Text>
 
                 <View style={{ height: 10 }} />
