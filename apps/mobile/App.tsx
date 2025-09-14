@@ -4,7 +4,6 @@ import {
   View,
   Text,
   TextInput,
-  Button,
   ActivityIndicator,
   Alert,
   StyleSheet,
@@ -26,7 +25,6 @@ import EventDetails, { type SelectedEvent } from './src/features/roster/EventDet
 import HomeAlerts from './src/features/home/HomeAlerts';
 import HomeSwapRequests from './src/features/home/HomeSwapRequests';
 
-// notifications helper
 import { initNotifications, registerPushToken } from './src/lib/notifications';
 import * as Notifications from 'expo-notifications';
 
@@ -36,7 +34,6 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Auth bootstrap
   useEffect(() => {
     let mounted = true;
     supabase.auth.getSession().then(({ data, error }) => {
@@ -46,13 +43,12 @@ export default function App() {
       setLoading(false);
     });
 
-    // log current notification permission status
     Notifications.getPermissionsAsync().then((p) => {
-      console.log('🔔 Current notification permission status:', p);
+      console.log('[notif] Current permission status:', p);
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      console.log('👤 auth state change:', _event, Boolean(newSession));
+      console.log('[auth] state change:', _event, Boolean(newSession));
       setSession(newSession);
     });
 
@@ -62,10 +58,8 @@ export default function App() {
     };
   }, []);
 
-  // Notifications bootstrap
   useEffect(() => {
     if (!session) return;
-
     let unsubNotif: (() => void) | undefined;
     let mounted = true;
 
@@ -120,9 +114,9 @@ function AuthedApp({ email }: { email: string }) {
   const [selectedEvent, setSelectedEvent] = useState<SelectedEvent | null>(null);
 
   const handleSignOut = async () => {
-    console.log('⎋ signOut pressed');
+    console.log('[auth] signOut pressed');
     const { error } = await supabase.auth.signOut();
-    console.log('⎋ signOut result:', { error });
+    console.log('[auth] signOut result:', { error });
     if (error) Alert.alert('Sign out failed', error.message);
   };
 
@@ -133,41 +127,17 @@ function AuthedApp({ email }: { email: string }) {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Header */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 6, marginBottom: 8 }}>
-        {screen !== 'home' ? (
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 6,
-            }}
-          >
-            <Button title="‹ Back" onPress={back} />
-            {/* no top-right sign out */}
-            <View style={{ width: 68 }} />
-          </View>
-        ) : (
-          <View style={{ alignItems: 'center', marginBottom: 2 }}>
-            {/* Text-only brand (no blue cross) */}
-            <Text style={styles.appBrand}>Servota</Text>
-          </View>
-        )}
+      {/* Header / Brand */}
+      <View style={styles.brandWrap}>
+        {/* Swap this Text for <Image source={require('./assets/brand/servota-logo.png')} .../> in Step 2 */}
+        <Text style={styles.brandWord}>SERVOTA</Text>
+        <Text style={styles.brandEmail}>{email}</Text>
       </View>
 
       {/* Screens */}
       {screen === 'home' && (
-        <View style={{ flex: 1, paddingHorizontal: 20, gap: 12 }}>
-          {/* Welcome under brand */}
-          <View style={{ alignItems: 'flex-start', marginTop: 2, marginBottom: 6 }}>
-            <Text style={styles.muted}>
-              Welcome,{'\n'}
-              <Text style={{ fontWeight: '600', color: '#111' }}>{email}</Text>
-            </Text>
-          </View>
-
-          {/* Banners */}
+        <View style={styles.homeWrap}>
+          {/* Optional banners (kept, but visually secondary) */}
           <HomeAlerts />
           <HomeSwapRequests />
 
@@ -191,10 +161,20 @@ function AuthedApp({ email }: { email: string }) {
           {/* Spacer */}
           <View style={{ flex: 1 }} />
 
-          {/* Big raised Logout at bottom */}
-          <Pressable onPress={handleSignOut} style={styles.logoutBtn}>
+          {/* Logout */}
+          <Pressable
+            onPress={handleSignOut}
+            style={styles.logoutBtn}
+            android_ripple={{ color: '#e5e7eb' }}
+          >
             <Text style={styles.logoutText}>Logout</Text>
           </Pressable>
+        </View>
+      )}
+
+      {screen !== 'home' && (
+        <View style={styles.subHeader}>
+          <BackButton onPress={back} />
         </View>
       )}
 
@@ -228,10 +208,21 @@ function AuthedApp({ email }: { email: string }) {
   );
 }
 
+function BackButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={styles.backBtn} android_ripple={{ color: '#e5e7eb' }}>
+      <Text style={styles.backIcon}>←</Text>
+      <Text style={styles.backText}>Back</Text>
+    </Pressable>
+  );
+}
+
 function HomeCard({ image, label, onPress }: { image: any; label: string; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={styles.cardBtn}>
-      <Image source={image} style={styles.cardIconImg} resizeMode="contain" />
+    <Pressable onPress={onPress} style={styles.cardBtn} android_ripple={{ color: '#e5e7eb' }}>
+      <View style={styles.iconCircle}>
+        <Image source={image} style={styles.cardIconImg} resizeMode="contain" />
+      </View>
       <Text style={styles.cardLabel}>{label}</Text>
     </Pressable>
   );
@@ -247,7 +238,7 @@ function SignInView() {
     setWorking(true);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     setWorking(false);
-    console.log('⎋ signIn result:', { hasSession: Boolean(data?.session), error });
+    console.log('[auth] signIn result:', { hasSession: Boolean(data?.session), error });
     if (error) Alert.alert('Sign in failed', error.message);
   };
 
@@ -256,7 +247,7 @@ function SignInView() {
     setWorking(true);
     const { data, error } = await supabase.auth.signUp({ email, password });
     setWorking(false);
-    console.log('✚ signUp result:', { hasUser: Boolean(data?.user), error });
+    console.log('[auth] signUp result:', { hasUser: Boolean(data?.user), error });
     if (error) Alert.alert('Sign up failed', error.message);
     else Alert.alert('Check your email', 'We sent you a confirmation link.');
   };
@@ -287,11 +278,23 @@ function SignInView() {
       ) : (
         <View style={styles.row}>
           <View style={styles.flex}>
-            <Button title="Sign in" onPress={signIn} />
+            <Pressable
+              onPress={signIn}
+              style={styles.primaryBtn}
+              android_ripple={{ color: '#2563eb' }}
+            >
+              <Text style={styles.primaryText}>Sign in</Text>
+            </Pressable>
           </View>
           <View style={styles.spacer} />
           <View style={styles.flex}>
-            <Button title="Sign up" onPress={signUp} />
+            <Pressable
+              onPress={signUp}
+              style={styles.secondaryBtn}
+              android_ripple={{ color: '#e5e7eb' }}
+            >
+              <Text style={styles.secondaryText}>Sign up</Text>
+            </Pressable>
           </View>
         </View>
       )}
@@ -305,32 +308,54 @@ function SignInView() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
+  safe: { flex: 1, backgroundColor: '#fafafa' }, // soft off-white background
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   container: { flex: 1, alignItems: 'stretch', justifyContent: 'center', padding: 20, gap: 12 },
 
-  // Branding
-  appBrand: { fontSize: 28, fontWeight: '800', color: '#222' },
+  // Brand area
+  brandWrap: {
+    alignItems: 'center',
+    paddingTop: 18,
+    paddingBottom: 8,
+    gap: 6,
+  },
+  brandWord: { fontSize: 28, fontWeight: '800', letterSpacing: 1, color: '#111' },
+  brandEmail: { fontSize: 16, color: '#6b7280' },
 
+  homeWrap: { flex: 1, paddingHorizontal: 16, paddingTop: 12, gap: 14 },
+
+  // Sub header for non-home screens
+  subHeader: {
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+  },
+
+  // Inputs / text
   title: { fontSize: 28, fontWeight: '700', textAlign: 'center' },
   subtitle: { fontSize: 16, textAlign: 'center', marginBottom: 8 },
   h1: { fontSize: 18, fontWeight: '700' },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12 },
+  input: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: '#fff',
+  },
   row: { flexDirection: 'row', alignItems: 'center' },
   flex: { flex: 1 },
   spacer: { width: 12 },
-  muted: { color: '#666' },
-  mutedSmall: { color: '#666', fontSize: 12, textAlign: 'center', marginTop: 16 },
+  muted: { color: '#6b7280' },
+  mutedSmall: { color: '#6b7280', fontSize: 12, textAlign: 'center', marginTop: 16 },
 
   // Home cards
   cardBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    gap: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
     backgroundColor: '#fff',
-    borderRadius: 14,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#ececec',
     shadowColor: '#000',
@@ -339,8 +364,16 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
-  cardIconImg: { width: 22, height: 22, opacity: 0.9 },
-  cardLabel: { fontSize: 18, fontWeight: '700', color: '#222' },
+  iconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#eef1f5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardIconImg: { width: 26, height: 26, opacity: 0.9 },
+  cardLabel: { fontSize: 22, fontWeight: '800', color: '#111' },
 
   // Event details etc
   card: {
@@ -360,28 +393,46 @@ const styles = StyleSheet.create({
   h2: { fontSize: 16, fontWeight: '800', marginTop: 8 },
   rowMeta: { fontSize: 12, color: '#555' },
   mutedRow: { color: '#666' },
+
+  // Buttons
   primaryBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#3b82f6',
+    alignSelf: 'stretch',
+    backgroundColor: '#111',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
   },
   primaryText: { color: '#fff', fontWeight: '800' },
   secondaryBtn: {
-    alignSelf: 'flex-start',
+    alignSelf: 'stretch',
     backgroundColor: '#eef1f5',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
   },
   secondaryText: { color: '#111', fontWeight: '800' },
+
+  // Back
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#f3f4f6',
+    alignSelf: 'flex-start',
+  },
+  backIcon: { fontSize: 16, color: '#111' },
+  backText: { fontWeight: '700', color: '#111' },
 
   // Logout button
   logoutBtn: {
     alignSelf: 'center',
     marginTop: 8,
-    marginBottom: 12,
+    marginBottom: 16,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
