@@ -1,5 +1,5 @@
 // apps/mobile/src/features/home/HomeSwapRequests.tsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Alert, Modal } from 'react-native';
 import { useCurrent } from '../../context/CurrentContext';
 import { supabase } from '../../lib/supabase';
@@ -27,8 +27,6 @@ export default function HomeSwapRequests() {
 
   // Modal
   const [selected, setSelected] = useState<Row | null>(null);
-
-  const scopeKey = useMemo(() => `${accountId ?? 'null'}:${teamId ?? 'null'}`, [accountId, teamId]);
 
   const fmtDate = (iso: string) =>
     new Date(iso).toLocaleDateString(undefined, {
@@ -64,7 +62,7 @@ export default function HomeSwapRequests() {
     return () => {
       mounted = false;
     };
-  }, [scopeKey]);
+  }, [accountId, teamId]);
 
   const onRespond = (id: string, action: 'accept' | 'decline') => {
     const title = action === 'accept' ? 'Accept this swap?' : 'Decline this swap?';
@@ -109,9 +107,9 @@ export default function HomeSwapRequests() {
             <View style={{ flex: 1 }}>
               {/* Title: your shift name (like HomeAlerts) */}
               <Text style={styles.itemTitle}>{r.to_event_label}</Text>
-              {/* Subtitle: Date(yours) ↔ Date(theirs) */}
+              {/* Subtitle: Date(yours) → Date(theirs) */}
               <Text style={styles.itemSub}>
-                {fmtDate(r.to_starts)} ↔ {fmtDate(r.from_starts)}
+                {fmtDate(r.to_starts)} → {fmtDate(r.from_starts)}
               </Text>
             </View>
 
