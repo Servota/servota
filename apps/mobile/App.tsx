@@ -29,10 +29,12 @@ import { initNotifications, registerPushToken } from './src/lib/notifications';
 import * as Notifications from 'expo-notifications';
 
 type Screen = 'home' | 'memberships' | 'roster' | 'unavailability' | 'eventDetails' | 'details';
+type AuthMode = 'signin' | 'signup';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authMode, setAuthMode] = useState<AuthMode>('signin');
 
   useEffect(() => {
     let mounted = true;
@@ -101,8 +103,10 @@ export default function App() {
           </View>
         ) : session ? (
           <AuthedApp />
+        ) : authMode === 'signin' ? (
+          <SignInView onSwitchMode={() => setAuthMode('signup')} />
         ) : (
-          <SignInView />
+          <SignUpView onSwitchMode={() => setAuthMode('signin')} />
         )}
       </SafeAreaView>
     </CurrentProvider>
@@ -228,7 +232,7 @@ function HomeCard({ image, label, onPress }: { image: any; label: string; onPres
   );
 }
 
-function SignInView() {
+function SignInView({ onSwitchMode }: { onSwitchMode: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [working, setWorking] = useState(false);
@@ -239,15 +243,6 @@ function SignInView() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setWorking(false);
     if (error) Alert.alert('Sign in failed', error.message);
-  };
-
-  const signUp = async () => {
-    if (!email || !password) return Alert.alert('Enter email and password');
-    setWorking(true);
-    const { error } = await supabase.auth.signUp({ email, password });
-    setWorking(false);
-    if (error) Alert.alert('Sign up failed', error.message);
-    else Alert.alert('Check your email', 'We sent you a confirmation link.');
   };
 
   return (
@@ -274,27 +269,109 @@ function SignInView() {
       {working ? (
         <ActivityIndicator />
       ) : (
-        <View style={styles.row}>
-          <View style={styles.flex}>
-            <Pressable
-              onPress={signIn}
-              style={styles.primaryBtn}
-              android_ripple={{ color: '#2563eb' }}
-            >
-              <Text style={styles.primaryText}>Sign in</Text>
-            </Pressable>
-          </View>
-          <View style={styles.spacer} />
-          <View style={styles.flex}>
-            <Pressable
-              onPress={signUp}
-              style={styles.secondaryBtn}
-              android_ripple={{ color: '#e5e7eb' }}
-            >
-              <Text style={styles.secondaryText}>Sign up</Text>
-            </Pressable>
-          </View>
-        </View>
+        <>
+          <Pressable
+            onPress={signIn}
+            style={styles.primaryBtn}
+            android_ripple={{ color: '#2563eb' }}
+          >
+            <Text style={styles.primaryText}>Sign in</Text>
+          </Pressable>
+
+          <View style={{ height: 8 }} />
+
+          <Pressable
+            onPress={onSwitchMode}
+            style={styles.secondaryBtn}
+            android_ripple={{ color: '#e5e7eb' }}
+          >
+            <Text style={styles.secondaryText}>Create an account</Text>
+          </Pressable>
+        </>
+      )}
+    </View>
+  );
+}
+
+function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [working, setWorking] = useState(false);
+
+  const signUp = async () => {
+    if (!email || !password || !confirm) {
+      Alert.alert('Missing info', 'Please fill all fields.');
+      return;
+    }
+    if (password !== confirm) {
+      Alert.alert('Passwords do not match', 'Please re-enter your password.');
+      return;
+    }
+    setWorking(true);
+    const { error } = await supabase.auth.signUp({ email, password });
+    setWorking(false);
+    if (error) {
+      Alert.alert('Sign up failed', error.message);
+      return;
+    }
+    Alert.alert(
+      'Check your email',
+      'We sent you a confirmation link. After confirming, return here to sign in.'
+    );
+    onSwitchMode();
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Servota</Text>
+      <Text style={styles.subtitle}>Create account</Text>
+
+      <TextInput
+        placeholder="Email"
+        autoCapitalize="none"
+        keyboardType="email-address"
+        value={email}
+        onChangeText={setEmail}
+        style={styles.input}
+      />
+      <TextInput
+        placeholder="Password"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+        style={styles.input}
+      />
+      <TextInput
+        placeholder="Confirm password"
+        secureTextEntry
+        value={confirm}
+        onChangeText={setConfirm}
+        style={styles.input}
+      />
+
+      {working ? (
+        <ActivityIndicator />
+      ) : (
+        <>
+          <Pressable
+            onPress={signUp}
+            style={styles.primaryBtn}
+            android_ripple={{ color: '#2563eb' }}
+          >
+            <Text style={styles.primaryText}>Sign up</Text>
+          </Pressable>
+
+          <View style={{ height: 8 }} />
+
+          <Pressable
+            onPress={onSwitchMode}
+            style={styles.secondaryBtn}
+            android_ripple={{ color: '#e5e7eb' }}
+          >
+            <Text style={styles.secondaryText}>Back to sign in</Text>
+          </Pressable>
+        </>
       )}
     </View>
   );
