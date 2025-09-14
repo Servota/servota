@@ -1,19 +1,18 @@
 // apps/web/src/AccountConsole.tsx
-import React, { useMemo, useState } from 'react';
-import { getBrowserSupabaseClient, getContext } from '@servota/shared';
+import React, { useState } from 'react';
+import { getContext } from '@servota/shared';
 import AccountMembers from './AccountMembers';
 
 /**
  * Manage Account console:
- * - Members: list account members, invite by email
- * - Teams: list teams, create/delete
- * - Settings: placeholder for future (plan, limits, suspension, etc.)
+ * - Members tab lives in ./AccountMembers (invite = Viewer; owner-only role edits)
+ * - Teams tab (placeholder)
+ * - Settings tab (placeholder)
  */
 
 type Tab = 'members' | 'teams' | 'settings';
 
 export default function AccountConsole() {
-  const supabase = useMemo(() => getBrowserSupabaseClient(), []);
   const { accountId } = getContext() as { accountId: string | null; teamId: string | null };
   const [tab, setTab] = useState<Tab>('members');
 
@@ -33,7 +32,7 @@ export default function AccountConsole() {
       <h2 style={{ marginTop: 0 }}>Manage Account</h2>
       <Tabs value={tab} onChange={setTab} />
       {tab === 'members' && <AccountMembers accountId={accountId} />}
-      {tab === 'teams' && <AccountTeams accountId={accountId} supabase={supabase} />}
+      {tab === 'teams' && <AccountTeams />}
       {tab === 'settings' && <AccountSettings />}
     </section>
   );
@@ -41,7 +40,13 @@ export default function AccountConsole() {
 
 /* ---------------- Tabs ---------------- */
 
-function Tabs({ value, onChange }: { value: Tab; onChange: (t: Tab) => void }) {
+function Tabs({
+  value,
+  onChange,
+}: {
+  value: Tab;
+  onChange: any; // keep lint happy (some configs flag unused param names in function types)
+}) {
   const btn = (k: Tab, label: string) => (
     <button
       key={k}
@@ -68,29 +73,36 @@ function Tabs({ value, onChange }: { value: Tab; onChange: (t: Tab) => void }) {
   );
 }
 
-/* ---------------- Teams ---------------- */
+/* ---------------- Teams (placeholder, no unused props) ---------------- */
 
-function AccountTeams({ accountId, supabase }: { accountId: string; supabase: any }) {
-  // simplified placeholder
+function AccountTeams() {
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 10 }}>
-      <strong>Teams</strong>
-      <p style={{ marginTop: 8, opacity: 0.7 }}>
-        Team management goes here (create, list, delete).
-      </p>
+    <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ padding: 10, borderBottom: '1px solid #f1f5f9' }}>
+        <strong>Teams</strong>
+      </div>
+      <div style={{ padding: 10 }}>
+        <p style={{ opacity: 0.8 }}>
+          Team management UI to be built here (create/delete teams).
+        </p>
+      </div>
     </div>
   );
 }
 
-/* ---------------- Settings ---------------- */
+/* ---------------- Settings (placeholder) ---------------- */
 
 function AccountSettings() {
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 10 }}>
-      <strong>Settings</strong>
-      <p style={{ marginTop: 8, opacity: 0.7 }}>
-        Coming soon: plan, limits, suspension, billing links, etc.
-      </p>
+    <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ padding: 10, borderBottom: '1px solid #f1f5f9' }}>
+        <strong>Settings</strong>
+      </div>
+      <div style={{ padding: 10 }}>
+        <div style={{ opacity: 0.8 }}>
+          Coming soon: plan, limits, suspension, export, billing links, etc.
+        </div>
+      </div>
     </div>
   );
 }
