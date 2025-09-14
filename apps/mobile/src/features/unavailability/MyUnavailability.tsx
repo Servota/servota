@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 // apps/mobile/src/features/unavailability/MyUnavailability.tsx
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -54,12 +55,10 @@ export default function MyUnavailability() {
     (async () => {
       setResolvingAcct(true);
       try {
-        // 1) If context selected, use it
         if (ctxAccountId) {
           if (mounted) setResolvedAccountId(ctxAccountId);
           return;
         }
-        // 2) Try profiles.default_account_id
         const { data: userRes, error: userErr } = await supabase.auth.getUser();
         if (userErr) throw userErr;
         const uid = userRes.user?.id;
@@ -76,7 +75,6 @@ export default function MyUnavailability() {
           return;
         }
 
-        // 3) Fall back to first active account_membership
         const { data: mems } = await supabase
           .from('account_memberships')
           .select('account_id')
@@ -116,7 +114,6 @@ export default function MyUnavailability() {
   }, [resolvingAcct, load]);
 
   // ----- UI helpers -----
-
   const fmtDay = (d: Date) =>
     d.toLocaleDateString(undefined, {
       weekday: 'short',
@@ -186,7 +183,6 @@ export default function MyUnavailability() {
           if (ev.type !== 'set' || !date) return;
           const d = stripTime(date);
           setStartDay(d);
-          // keep end >= start
           setEndDay((prev) => (prev < d ? d : prev));
         },
       });
@@ -201,11 +197,11 @@ export default function MyUnavailability() {
       DateTimePickerAndroid.open({
         value: endDay,
         mode: 'date',
-        minimumDate: startDay, // prevent choosing before From
+        minimumDate: startDay,
         onChange: (ev, date) => {
           if (ev.type !== 'set' || !date) return;
           const d = stripTime(date);
-          if (d < startDay) return; // guard
+          if (d < startDay) return;
           setEndDay(d);
         },
       });
@@ -244,7 +240,10 @@ export default function MyUnavailability() {
         ListHeaderComponent={<Header />}
         refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}
         ListEmptyComponent={
-          hasLoadedOnce && items.length === 0 ? (
+          // --- requested: show a calm text while first load happens, no spinner/flicker
+          !hasLoadedOnce ? (
+            <Text style={[styles.meta, { padding: 16 }]}>Loading entries…</Text>
+          ) : items.length === 0 ? (
             <Text style={[styles.meta, { padding: 16 }]}>No future unavailability.</Text>
           ) : null
         }
@@ -261,7 +260,7 @@ export default function MyUnavailability() {
 
               {/* Subtle grey × button */}
               <Pressable
-                onPress={() => openRemove(item)}
+                onPress={() => setRemoveTarget(item)}
                 style={styles.closeBtn}
                 android_ripple={{ color: '#e5e7eb' }}
                 accessibilityLabel="Remove unavailability"
