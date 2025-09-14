@@ -2,30 +2,49 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Modal } from 'react-native';
 import { useCurrent } from '../../context/CurrentContext';
-import {
-  listOpenReplacementRequests,
-  claimReplacement,
-  type Scope,
-  type OpenReplacementRow,
-} from '../../api/replacements';
+import { claimReplacement } from '../../api/replacements';
 import { supabase } from '../../lib/supabase';
+
+type OfferRow = {
+  request_id: string;
+  account_id: string;
+  team_id: string | null;
+  event_id: string;
+  label: string;
+  starts_at: string; // ISO
+  ends_at: string; // ISO
+  requester_user_id: string | null;
+  requester_name: string | null;
+};
 
 export default function HomeAlerts() {
   const { accountId, teamId } = useCurrent();
-  const [items, setItems] = useState<OpenReplacementRow[] | null>(null);
+
+  // Data state
+  const [items, setItems] = useState<OfferRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [myUserId, setMyUserId] = useState<string | null>(null);
 
   // Modal state
-  const [selected, setSelected] = useState<OpenReplacementRow | null>(null);
-  const [requesterName, setRequesterName] = useState<string | null>(null);
-  const [reqLoading, setReqLoading] = useState(false);
+  const [selected, setSelected] = useState<OfferRow | null>(null);
 
-  const scope: Scope = useMemo(
-    () => (teamId ? 'team' : accountId ? 'account' : 'all'),
-    [accountId, teamId]
-  );
+  const scopeKey = useMemo(() => `${accountId ?? 'null'}:${teamId ?? 'null'}`, [accountId, teamId]);
+
+  // ---- Helpers ----
+  const fmtDate = (iso: string) =>
+    new Date(iso).toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
+
+  const fmtTime = (iso: string) =>
+    new Date(iso)
+      .toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+      .replace(' ', '');
+
+  // ---- Effects ----
 
   // Load current user id once
   useEffect(() => {
@@ -39,23 +58,33 @@ export default function HomeAlerts() {
     };
   }, []);
 
-  // Load open replacement requests in scope
+  // Load replacement offers via RPC (scoped)
   useEffect(() => {
     let mounted = true;
     (async () => {
-      // Only show spinner if we already showed the card before
+      // Only show spinner if we already showed visible content
       if (hasLoadedOnce && (items?.length ?? 0) > 0) setLoading(true);
 
       try {
-        const rows = await listOpenReplacementRequests({ scope, accountId, teamId, limit: 10 });
+        // Omit generics; cast after to keep TS happy in all setups
+        const { data, error } = await supabase.rpc('list_replacement_offers', {
+          _account_id: accountId ?? null,
+          _team_id: teamId ?? null,
+          _limit: 10,
+        });
+        if (error) throw error;
         if (!mounted) return;
 
-        // Exclude requests opened by me (the requester should not see their own request)
-        const filtered = myUserId ? rows.filter((r) => r.requester_user_id !== myUserId) : rows;
+        const rows: OfferRow[] = (data ?? []) as OfferRow[];
+
+        // Exclude my own requests (the requester shouldn’t see their own request)
+        const filtered = myUserId
+          ? rows.filter((r: OfferRow) => r.requester_user_id !== myUserId)
+          : rows;
+
         setItems(filtered);
       } catch {
-        // Keep previous items if any (prevents flicker). If none, stay null.
-        if (mounted) setItems((prev) => prev ?? null);
+        if (mounted) setItems((prev) => prev ?? null); // keep previous if any
       } finally {
         if (mounted) {
           setHasLoadedOnce(true);
@@ -67,47 +96,12 @@ export default function HomeAlerts() {
       mounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, accountId, teamId, myUserId, hasLoadedOnce]);
+  }, [scopeKey, myUserId, hasLoadedOnce]);
 
-  // First mount: render nothing (silent)
-  if (!hasLoadedOnce) return null;
-
-  // If we have no items after load, render nothing (no empty placeholder)
-  if (!items || items.length === 0) return null;
-
-  const top = items.slice(0, 3);
-
-  const fmt = (s: string, e: string) => {
-    const S = new Date(s),
-      E = new Date(e);
-    const d = S.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-    const t = (x: Date) =>
-      x.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(' ', '');
-    return `${d} • ${t(S)}–${t(E)}`;
-  };
-
-  const openDetails = async (row: OpenReplacementRow) => {
-    setSelected(row);
-    setRequesterName(null);
-    if (!row.requester_user_id) return;
-
-    setReqLoading(true);
-    try {
-      // Lazy-load requester name for the modal
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('user_id', row.requester_user_id)
-        .maybeSingle();
-
-      if (!error) setRequesterName(data?.full_name ?? null);
-    } finally {
-      setReqLoading(false);
-    }
-  };
+  // ---- Modal handlers ----
+  const openDetails = (row: OfferRow) => setSelected(row);
 
   const onClaim = async (reqId: string) => {
-    // Double-confirm to avoid accidental claims
     Alert.alert('Claim this shift?', 'You will be assigned to this event.', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -117,8 +111,7 @@ export default function HomeAlerts() {
           try {
             await claimReplacement(reqId);
             Alert.alert('Claimed!', 'You have been assigned to this event.');
-            // Optimistic remove:
-            setItems((prev) => (prev ?? []).filter((r) => r.request_id !== reqId));
+            setItems((prev) => (prev ?? []).filter((r) => r.request_id !== reqId)); // optimistic remove
             setSelected(null);
           } catch (e: any) {
             Alert.alert('Could not claim', e?.message ?? 'Please try again.');
@@ -129,10 +122,19 @@ export default function HomeAlerts() {
   };
 
   const onHide = (reqId: string) => {
-    // Local hide only (UI preference). Server request remains available to others.
-    setItems((prev) => (prev ?? []).filter((r) => r.request_id !== reqId));
+    setItems((prev) => (prev ?? []).filter((r) => r.request_id !== reqId)); // local hide only
     setSelected(null);
   };
+
+  // ---- Render rules ----
+
+  // Silent first mount
+  if (!hasLoadedOnce) return null;
+
+  // No data → render nothing (no empty placeholder)
+  if (!items || items.length === 0) return null;
+
+  const top = items.slice(0, 3);
 
   return (
     <>
@@ -146,7 +148,8 @@ export default function HomeAlerts() {
           <View key={r.request_id} style={styles.item}>
             <View style={{ flex: 1 }}>
               <Text style={styles.itemTitle}>{r.label}</Text>
-              <Text style={styles.itemSub}>{fmt(r.starts_at, r.ends_at)}</Text>
+              {/* Card shows DATE ONLY (no times) */}
+              <Text style={styles.itemSub}>{fmtDate(r.starts_at)}</Text>
             </View>
             <Pressable onPress={() => openDetails(r)} style={styles.detailsBtn}>
               <Text style={styles.detailsText}>Details</Text>
@@ -176,13 +179,17 @@ export default function HomeAlerts() {
 
             {selected ? (
               <>
+                {/* Date & time layout as requested */}
                 <Text style={styles.modalLineTitle}>{selected.label}</Text>
-                <Text style={styles.modalLine}>{fmt(selected.starts_at, selected.ends_at)}</Text>
+                <Text style={styles.modalLine}>{fmtDate(selected.starts_at)}</Text>
+                <Text style={styles.modalLine}>
+                  {fmtTime(selected.starts_at)}–{fmtTime(selected.ends_at)}
+                </Text>
 
                 <View style={{ height: 8 }} />
 
                 <Text style={styles.modalSubtle}>
-                  Requested by: {reqLoading ? 'Loading…' : (requesterName ?? 'Member')}
+                  Requested by: {selected.requester_name?.trim() || 'Member'}
                 </Text>
 
                 <View style={{ height: 12 }} />
@@ -266,7 +273,7 @@ const styles = StyleSheet.create({
   modalClose: { fontSize: 12, color: '#666' },
   modalLineTitle: { fontSize: 15, fontWeight: '700', color: '#111' },
   modalLine: { fontSize: 13, color: '#333', marginTop: 2 },
-  modalSubtle: { fontSize: 12, color: '#666' },
+  modalSubtle: { fontSize: 12, color: '#666', marginTop: 8 },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
 
   claimBtn: {
