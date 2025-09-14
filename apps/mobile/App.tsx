@@ -215,7 +215,7 @@ function AuthedApp() {
 function BackButton({ onPress }: { onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={styles.backBtn} android_ripple={{ color: '#e5e7eb' }}>
-      <Text style={styles.backIcon}>←</Text>
+      <Text style={styles.backIcon}>{'<'}</Text>
       <Text style={styles.backText}>Back</Text>
     </Pressable>
   );
@@ -410,23 +410,187 @@ function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
 }
 
 function MyDetails() {
+  const [loading, setLoading] = useState(true);
+  const [savingName, setSavingName] = useState(false);
+  const [changingEmail, setChangingEmail] = useState(false);
+
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
+
+  // Load current user details
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) {
+        Alert.alert('Unable to load profile', error.message);
+        setLoading(false);
+        return;
+      }
+      const u = data.user;
+      if (!u) {
+        setLoading(false);
+        return;
+      }
+      if (!mounted) return;
+      setFirstName(String(u.user_metadata?.first_name ?? ''));
+      setLastName(String(u.user_metadata?.last_name ?? ''));
+      setEmail(String(u.email ?? ''));
+      setLoading(false);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const saveName = async () => {
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    if (!fn || !ln) {
+      Alert.alert('Missing info', 'Please enter both first and last name.');
+      return;
+    }
+
+    setSavingName(true);
+
+    // 1) Update auth user metadata
+    const { error: authErr } = await supabase.auth.updateUser({
+      data: { first_name: fn, last_name: ln },
+    });
+    if (authErr) {
+      setSavingName(false);
+      Alert.alert('Update failed', authErr.message);
+      return;
+    }
+
+    // 2) Mirror into public.profiles via upsert on user_id
+    const { data: userData, error: getErr } = await supabase.auth.getUser();
+    if (getErr || !userData.user) {
+      setSavingName(false);
+      Alert.alert('Update failed', getErr?.message ?? 'No auth user.');
+      return;
+    }
+
+    const userId = userData.user.id;
+    const full = `${fn} ${ln}`.trim();
+
+    const { error: profErr } = await supabase.from('profiles').upsert(
+      [
+        {
+          user_id: userId,
+          first_name: fn,
+          last_name: ln,
+          full_name: full,
+          display_name: full,
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      { onConflict: 'user_id' }
+    );
+
+    setSavingName(false);
+
+    if (profErr) {
+      Alert.alert(
+        'Saved to auth only',
+        `Name saved to account, but profile failed: ${profErr.message}`
+      );
+      return;
+    }
+
+    Alert.alert('Saved', 'Your name has been updated.');
+  };
+
+  const changeEmail = async () => {
+    const em = email.trim();
+    if (!em) {
+      Alert.alert('Missing email', 'Please enter a valid email.');
+      return;
+    }
+    setChangingEmail(true);
+    const { error } = await supabase.auth.updateUser({ email: em });
+    setChangingEmail(false);
+    if (error) {
+      Alert.alert('Email change failed', error.message);
+      return;
+    }
+    Alert.alert(
+      'Verify your new email',
+      'We sent a confirmation link to the new address. Open it to complete the change.'
+    );
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.center, { paddingHorizontal: 16, paddingTop: 12 }]}>
+        <ActivityIndicator />
+        <Text style={styles.muted}>Loading your details…</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12, gap: 14 }}>
       <View style={styles.card}>
         <Text style={styles.h1}>My Details</Text>
         <Text style={styles.meta}>
-          Placeholder screen. Here you’ll be able to update your name, email, and mobile number.
+          Update your name and email. Changing email will require you to confirm via a link we send
+          to the new address.
         </Text>
       </View>
 
+      {/* Name */}
       <View style={[styles.card, { gap: 10 }]}>
-        <Text style={styles.h2}>Preview (read-only)</Text>
-        <TextInput editable={false} placeholder="Full name" style={styles.input} />
-        <TextInput editable={false} placeholder="Email" style={styles.input} />
-        <TextInput editable={false} placeholder="Mobile" style={styles.input} />
-        <Pressable style={styles.secondaryBtn}>
-          <Text style={styles.secondaryText}>Edit coming soon</Text>
+        <Text style={styles.h2}>Name</Text>
+        <TextInput
+          placeholder="First name"
+          value={firstName}
+          onChangeText={setFirstName}
+          style={styles.input}
+        />
+        <TextInput
+          placeholder="Last name"
+          value={lastName}
+          onChangeText={setLastName}
+          style={styles.input}
+        />
+        <Pressable
+          onPress={saveName}
+          disabled={savingName}
+          style={[styles.primaryBtn, savingName && { opacity: 0.6 }]}
+          android_ripple={{ color: '#2563eb' }}
+        >
+          {savingName ? <ActivityIndicator /> : <Text style={styles.primaryText}>Save name</Text>}
         </Pressable>
+      </View>
+
+      {/* Email */}
+      <View style={[styles.card, { gap: 10 }]}>
+        <Text style={styles.h2}>Email</Text>
+        <TextInput
+          placeholder="Email"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+          style={styles.input}
+        />
+        <Pressable
+          onPress={changeEmail}
+          disabled={changingEmail}
+          style={[styles.secondaryBtn, changingEmail && { opacity: 0.6 }]}
+          android_ripple={{ color: '#e5e7eb' }}
+        >
+          {changingEmail ? (
+            <ActivityIndicator />
+          ) : (
+            <Text style={styles.secondaryText}>Change email</Text>
+          )}
+        </Pressable>
+        <Text style={[styles.meta, { marginTop: 4 }]}>
+          You may be signed out after confirming the new email.
+        </Text>
       </View>
     </View>
   );
