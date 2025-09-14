@@ -21,26 +21,29 @@ export default function HomeSwapRequests() {
   const { accountId, teamId } = useCurrent();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   const scopeFilter = useMemo(() => ({ accountId, teamId }), [accountId, teamId]);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
-      setLoading(true);
+      // Show refresh spinner only if we already have visible content
+      if (hasLoadedOnce && (rows?.length ?? 0) > 0) setLoading(true);
+
       try {
-        const { data: me } = await supabase.auth.getUser();
+        const { data: me, error: meErr } = await supabase.auth.getUser();
+        if (meErr) throw meErr;
         const uid = me?.user?.id as string;
 
-        // pull pending where I'm the recipient (to_user_id)
+        // pending where I'm the recipient (to_user_id)
         let q = supabase
           .from('swap_requests')
           .select(
             `
-            id, status,
-            accounts:account_id ( name ),
-            teams:team_id ( name ),
+            id, status, created_at,
+            accounts:account_id ( id, name ),
+            teams:team_id ( id, name ),
             from:from_assignment_id (
               id, event_id, events!inner ( label, starts_at, ends_at )
             ),
@@ -72,27 +75,28 @@ export default function HomeSwapRequests() {
           to_starts: r.to?.events?.starts_at,
           to_ends: r.to?.events?.ends_at,
         }));
-        if (!mounted) return;
-        setRows(map);
+
+        if (mounted) setRows(map);
       } catch {
-        if (!mounted) return;
-        setRows([]);
+        // Keep previous rows if any; otherwise remain null
+        if (mounted) setRows((prev) => prev ?? null);
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setHasLoadedOnce(true);
+          setLoading(false);
+        }
       }
     })();
     return () => {
       mounted = false;
     };
-  }, [scopeFilter.accountId, scopeFilter.teamId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeFilter.accountId, scopeFilter.teamId, hasLoadedOnce]);
 
-  if (dismissed) return null;
-  if (loading)
-    return (
-      <View style={styles.card}>
-        <ActivityIndicator />
-      </View>
-    );
+  // First mount: render nothing (silent)
+  if (!hasLoadedOnce) return null;
+
+  // If no rows after load, render nothing (no empty placeholder)
   if (!rows || rows.length === 0) return null;
 
   const fmt = (s: string, e: string) => {
@@ -121,9 +125,7 @@ export default function HomeSwapRequests() {
     <View style={styles.card}>
       <View style={styles.row}>
         <Text style={styles.title}>Swap requests</Text>
-        <Pressable onPress={() => setDismissed(true)}>
-          <Text style={styles.dismiss}>Hide</Text>
-        </Pressable>
+        {loading ? <ActivityIndicator size="small" /> : null}
       </View>
 
       {rows.map((r) => (
@@ -132,7 +134,7 @@ export default function HomeSwapRequests() {
             {r.account_name ?? 'Account'}
             {r.team_name ? ` — ${r.team_name}` : ''}
           </Text>
-          <Text style={styles.itemSub}>You ⇄ Them</Text>
+          <Text style={styles.itemSub}>You ↔ Them</Text>
           <Text style={styles.line}>
             • {r.from_event_label}: {fmt(r.from_starts, r.from_ends)}
           </Text>
@@ -175,7 +177,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   title: { fontSize: 16, fontWeight: '800', color: '#111' },
-  dismiss: { fontSize: 12, color: '#666' },
   itemTitle: { fontSize: 14, fontWeight: '700', color: '#111' },
   itemSub: { fontSize: 12, color: '#666' },
   line: { fontSize: 12, color: '#333' },

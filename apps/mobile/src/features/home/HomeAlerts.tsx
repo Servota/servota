@@ -14,7 +14,7 @@ export default function HomeAlerts() {
   const { accountId, teamId } = useCurrent();
   const [items, setItems] = useState<OpenReplacementRow[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [myUserId, setMyUserId] = useState<string | null>(null);
 
   const scope: Scope = useMemo(
@@ -27,8 +27,7 @@ export default function HomeAlerts() {
     let mounted = true;
     (async () => {
       const { data, error } = await supabase.auth.getUser();
-      if (!mounted) return;
-      if (!error) setMyUserId(data.user?.id ?? null);
+      if (mounted && !error) setMyUserId(data.user?.id ?? null);
     })();
     return () => {
       mounted = false;
@@ -39,36 +38,35 @@ export default function HomeAlerts() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      setLoading(true);
+      // Only show spinner if we already showed the card before
+      if (hasLoadedOnce && (items?.length ?? 0) > 0) setLoading(true);
+
       try {
         const rows = await listOpenReplacementRequests({ scope, accountId, teamId, limit: 10 });
         if (!mounted) return;
 
-        // Exclude requests opened by me (the requester should not see their own request)
         const filtered = myUserId ? rows.filter((r) => r.requester_user_id !== myUserId) : rows;
-
         setItems(filtered);
       } catch {
-        if (!mounted) return;
-        setItems([]);
+        // Keep previous items if any (prevents flicker). If none, stay null.
+        if (mounted) setItems((prev) => prev ?? null);
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setHasLoadedOnce(true);
+          setLoading(false);
+        }
       }
     })();
     return () => {
       mounted = false;
     };
-    // re-run when scope changes or when we learn myUserId
-  }, [scope, accountId, teamId, myUserId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, accountId, teamId, myUserId, hasLoadedOnce]);
 
-  if (dismissed) return null;
-  if (loading)
-    return (
-      <View style={styles.card}>
-        <ActivityIndicator />
-      </View>
-    );
+  // First mount: render nothing (silent)
+  if (!hasLoadedOnce) return null;
 
+  // If we have no items after load, render nothing (no empty placeholder)
   if (!items || items.length === 0) return null;
 
   const top = items.slice(0, 3);
@@ -97,9 +95,7 @@ export default function HomeAlerts() {
     <View style={styles.card}>
       <View style={styles.row}>
         <Text style={styles.title}>Replacement requests</Text>
-        <Pressable onPress={() => setDismissed(true)}>
-          <Text style={styles.dismiss}>Hide</Text>
-        </Pressable>
+        {loading ? <ActivityIndicator size="small" /> : null}
       </View>
       {top.map((r) => (
         <View key={r.request_id} style={styles.item}>
@@ -140,7 +136,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   title: { fontSize: 16, fontWeight: '800', color: '#111' },
-  dismiss: { fontSize: 12, color: '#666' },
   item: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 6 },
   itemTitle: { fontSize: 14, fontWeight: '700', color: '#111' },
   itemSub: { fontSize: 12, color: '#555' },
