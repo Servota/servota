@@ -5,6 +5,7 @@ import TeamSchedule from './TeamSchedule';
 import TeamSettings from './TeamSettings';
 import TeamApprovals from './TeamApprovals';
 import TeamMembers from './TeamMembers';
+import AccountConsole from './AccountConsole';
 
 /* ------------ Types ------------ */
 
@@ -169,7 +170,7 @@ export default function App() {
       const [{ data: tData, error: tErr }, { data: tmData, error: tmErr }] = await Promise.all([
         supabase
           .from('teams')
-          .select<any>('id, account_id, name, active, allow_swaps, swap_requires_approval') // <any> until types regenerate
+          .select<any>('id, account_id, name, active, allow_swaps, swap_requires_approval')
           .eq('account_id', accountId)
           .eq('active', true),
         supabase
@@ -182,7 +183,7 @@ export default function App() {
       if (tErr) console.warn('teams error:', tErr.message);
       if (tmErr) console.warn('team_memberships error:', tmErr.message);
 
-      const tRows = (tData ?? []) as unknown as Team[]; // ← cast via unknown to avoid SelectQueryError union
+      const tRows = (tData ?? []) as unknown as Team[];
       const tmRows = (tmData ?? []) as TeamMembership[];
 
       if (!cancelled) {
@@ -417,12 +418,8 @@ export default function App() {
             <p>
               Managing account: <strong>{accountLabel || accountId || '(none selected)'}</strong>
             </p>
-            <ul>
-              <li>Settings (name/plan) — billing handled on website portal</li>
-              <li>Users & invitations</li>
-              <li>Teams</li>
-              <li>Assign schedulers</li>
-            </ul>
+            {/* Render the full Manage Account console */}
+            <AccountConsole />
           </section>
         )}
 

@@ -66,11 +66,11 @@ _Last updated: 28 Aug 2025_
 
 ### Phase 6 — Web/Desktop app (React PWA + Microsoft Store)
 
-- [ ] [6.1 Create React + Vite PWA and run it](#61-create-react--vite-pwa-and-run-it)
-- [ ] [6.2 Add sign-in & account switcher (reuse shared client)](#62-add-sign-in--account-switcher-reuse-shared-client)
-- [ ] [6.3 Build the team roster console (Requirements-aware)](#63-build-the-team-roster-console-requirements-aware)
-- [ ] [6.4 Team settings: allow_swaps, roster_visibility](#64-team-settings-allow_swaps-roster_visibility)
-- [ ] [6.5 Swap approvals queue (if policy requires)](#65-swap-approvals-queue-if-policy-requires)
+- [x] [6.1 Create React + Vite PWA and run it](#61-create-react--vite-pwa-and-run-it)
+- [x] [6.2 Add sign-in & account switcher (reuse shared client)](#62-add-sign-in--account-switcher-reuse-shared-client)
+- [x] [6.3 Build the team roster console (Requirements-aware)](#63-build-the-team-roster-console-requirements-aware)
+- [x] [6.4 Team settings: allow_swaps, roster_visibility](#64-team-settings-allow_swaps-roster_visibility)
+- [x] [6.5 Swap approvals queue (if policy requires)](#65-swap-approvals-queue-if-policy-requires)
 - [ ] [6.6 Package for Microsoft Store (PWABuilder → MSIX) & test install](#66-package-for-microsoft-store-pwabuilder--msix--test-install)
 - [ ] [6.7 Auto-schedule UI (preview → apply → undo)](#67-auto-schedule-ui-preview--apply--undo)
 

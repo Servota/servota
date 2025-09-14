@@ -63,37 +63,37 @@ export default function TeamApprovals() {
   }, [accountId, teamId]);
 
   const approve = async (row: SwapRow) => {
-    try {
-      // cross-date if both assignment ids are present
-      const isCrossDate = !!row.from_assignment_id && !!row.to_assignment_id;
+  try {
+    const { error } = await (supabase as any).rpc('approve_swap_request', {
+      p_swap_request_id: row.id,
+    });
+    if (error) throw error;
+    setItems((prev) => prev.filter((r) => r.id !== row.id));
+  } catch (e: any) {
+    alert(e?.message ?? 'Could not approve');
+  }
+};
 
-      const { error } = await (supabase as any).rpc(
-        isCrossDate ? 'apply_cross_date_swap' : 'apply_swap',
-        { p_swap_request_id: row.id }
-      );
-      if (error) throw error;
 
-      setItems((prev) => prev.filter((r) => r.id !== row.id));
-    } catch (e: any) {
-      alert(e?.message ?? 'Could not approve');
-    }
-  };
 
   const decline = async (row: SwapRow) => {
-    try {
-      // same RPC for both types: respond_* only cares about id + action
-      const isCrossDate = !!row.from_assignment_id && !!row.to_assignment_id;
-      const { error } = await (supabase as any).rpc(
-        isCrossDate ? 'respond_cross_date_swap' : 'respond_swap',
-        { p_swap_request_id: row.id, p_action: 'decline' }
-      );
-      if (error) throw error;
+  try {
+    const isCrossDate = !!row.from_assignment_id && !!row.to_assignment_id;
 
-      setItems((prev) => prev.filter((r) => r.id !== row.id));
-    } catch (e: any) {
-      alert(e?.message ?? 'Could not decline');
-    }
-  };
+    const { error } = await (supabase as any).rpc(
+      isCrossDate ? 'respond_cross_date_swap' : 'respond_swap',
+      isCrossDate
+        ? { p_swap_request_id: row.id, p_action: 'decline' }    // cross-date params
+        : { swap_request_id: row.id, action: 'decline' }        // same-event params
+    );
+    if (error) throw error;
+
+    setItems((prev) => prev.filter((r) => r.id !== row.id));
+  } catch (e: any) {
+    alert(e?.message ?? 'Could not decline');
+  }
+};
+
 
   const fmt = (iso?: string | null) => {
     if (!iso) return '—';
