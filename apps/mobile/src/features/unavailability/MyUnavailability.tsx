@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
-  ActivityIndicator,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -30,8 +29,9 @@ export default function MyUnavailability() {
   const [resolvedAccountId, setResolvedAccountId] = useState<string | null>(null);
   const [resolvingAcct, setResolvingAcct] = useState(true);
 
-  const [items, setItems] = useState<Unavailability[] | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  // list state — initialise to [] so there’s no flicker
+  const [items, setItems] = useState<Unavailability[]>([]);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Add modal state
@@ -94,23 +94,22 @@ export default function MyUnavailability() {
   const load = useCallback(async () => {
     if (!resolvedAccountId) {
       setItems([]); // show empty quietly if we couldn’t resolve any account
+      setHasLoadedOnce(true);
       return;
     }
     setError(null);
-    setRefreshing(true);
     try {
       const rows = await listMyFutureUnavailability(resolvedAccountId);
       setItems(rows);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load unavailability');
-      setItems([]);
+      // keep previous items so there’s no visual jump
     } finally {
-      setRefreshing(false);
+      setHasLoadedOnce(true);
     }
   }, [resolvedAccountId]);
 
   useEffect(() => {
-    setItems(null);
     if (!resolvingAcct) load();
   }, [resolvingAcct, load]);
 
@@ -197,12 +196,8 @@ export default function MyUnavailability() {
           </Text>
         ) : null}
 
+        {/* No spinner here by design. If there’s an error, show a small line of text. */}
         {error ? <Text style={[styles.meta, { color: '#c00' }]}>{error}</Text> : null}
-        {items === null || resolvingAcct ? (
-          <View style={{ paddingTop: 6 }}>
-            <ActivityIndicator />
-          </View>
-        ) : null}
       </View>
 
       <Text style={styles.section}>Upcoming</Text>
@@ -212,12 +207,13 @@ export default function MyUnavailability() {
   return (
     <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }}>
       <FlatList
-        data={items ?? []}
+        data={items}
         keyExtractor={(it) => it.id}
         ListHeaderComponent={<Header />}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />}
+        // No visual spinner; still allow pull-to-refresh if you want the gesture
+        refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}
         ListEmptyComponent={
-          items && items.length === 0 ? (
+          hasLoadedOnce && items.length === 0 ? (
             <Text style={[styles.meta, { padding: 16 }]}>No future unavailability.</Text>
           ) : null
         }
@@ -258,7 +254,7 @@ export default function MyUnavailability() {
               </Pressable>
             </View>
 
-            {/* iOS inline picker area */}
+            {/* iOS inline picker area (no spinner components—native picker only) */}
             {Platform.OS === 'ios' && iosPickerTarget && (
               <View style={{ paddingTop: 6 }}>
                 <Text style={styles.iosPickLabel}>
