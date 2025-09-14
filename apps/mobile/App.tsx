@@ -247,7 +247,7 @@ function SignInView({ onSwitchMode }: { onSwitchMode: () => void }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Servota</Text>
+      <Image source={require('./assets/brand/servota-logo.png')} style={styles.authLogo} />
       <Text style={styles.subtitle}>Sign in</Text>
 
       <TextInput
@@ -321,8 +321,6 @@ function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
     try {
       setWorking(true);
 
-      // Create auth user and stash names in metadata.
-      // No client write to public.profiles — DB trigger takes care of it.
       const { error } = await supabase.auth.signUp({
         email: em,
         password,
@@ -346,7 +344,7 @@ function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Servota</Text>
+      <Image source={require('./assets/brand/servota-logo.png')} style={styles.authLogo} />
       <Text style={styles.subtitle}>Create account</Text>
 
       <TextInput
@@ -449,6 +447,13 @@ const styles = StyleSheet.create({
     width: 320,
     height: 96,
     resizeMode: 'contain',
+  },
+  authLogo: {
+    width: 220,
+    height: 70,
+    resizeMode: 'contain',
+    alignSelf: 'center',
+    marginBottom: 12,
   },
 
   homeWrap: { flex: 1, paddingHorizontal: 16, paddingTop: 12, gap: 14 },
@@ -559,3 +564,5 @@ const styles = StyleSheet.create({
   },
   logoutText: { fontWeight: '700', color: '#111', fontSize: 16 },
 });
+
+export {};
