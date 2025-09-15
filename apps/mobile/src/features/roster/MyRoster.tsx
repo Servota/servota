@@ -15,13 +15,14 @@ import {
 } from '../../api/memberships';
 import { useCurrent } from '../../context/CurrentContext';
 
+const BRAND_BLUE = '#1C94B3'; // sampled from logo
+
 export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssignment) => void }) {
   const { accountId, accountName, teamId, teamName, setAccount, setTeam, clear } = useCurrent();
 
   // data + ui state
   const [items, setItems] = useState<MyAssignment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
 
   // pickers
   const [accounts, setAccounts] = useState<AccountMembership[] | null>(null);
@@ -75,23 +76,20 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
     [accountId, teamId]
   );
 
-  // load assignments
+  // load assignments (silent)
   const load = useCallback(async () => {
     setError(null);
-    setRefreshing(true);
     try {
       const mine = await getMyUpcomingAssignments({ scope, accountId, teamId, limit: 100 });
       setItems(mine);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load roster');
       setItems([]);
-    } finally {
-      setRefreshing(false);
     }
   }, [scope, accountId, teamId]);
 
   useEffect(() => {
-    setItems(null); // avoid flicker between scope changes
+    setItems(null); // quiet placeholder instead of spinner
     load();
   }, [load]);
 
@@ -192,13 +190,9 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
         data={data}
         keyExtractor={(it) => it.assignment_id}
         ListHeaderComponent={<Header />}
+        // silent pull-to-refresh
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={load}
-            tintColor="#111"
-            colors={['#111']}
-          />
+          <RefreshControl refreshing={false} onRefresh={load} tintColor="#111" colors={['#111']} />
         }
         ListEmptyComponent={
           items !== null && data.length === 0 ? (
@@ -399,7 +393,7 @@ const styles = StyleSheet.create({
   cardSub: { fontSize: 12, color: '#555' },
   metaLine: { fontSize: 13, color: '#444' },
 
-  // chips — now visually distinct from the section bar
+  // chips — distinct from section bar
   chip: {
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -430,17 +424,17 @@ const styles = StyleSheet.create({
   // filter summary
   filterSummary: { fontSize: 12, color: '#111', fontWeight: '700', marginTop: 2 },
 
-  // date badge — cleaner: white with soft border
+  // date badge — brand blue with white text
   dateBadge: {
     width: 44,
     borderRadius: 10,
+    borderWidth: 2,
+    borderColor: BRAND_BLUE,
     backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
     alignItems: 'center',
     paddingVertical: 6,
   },
-  dateDow: { fontSize: 12, color: '#111', fontWeight: '800' },
+  dateDow: { fontSize: 12, color: BRAND_BLUE, fontWeight: '700' },
   dateDay: { fontSize: 18, color: '#111', fontWeight: '800' },
 
   // modal
