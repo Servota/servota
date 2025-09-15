@@ -1,16 +1,7 @@
 /* eslint-disable no-unused-vars */
 // apps/mobile/src/features/roster/MyRoster.tsx
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  ActivityIndicator,
-  FlatList,
-  StyleSheet,
-  RefreshControl,
-  Pressable,
-  Modal,
-} from 'react-native';
+import { View, Text, FlatList, StyleSheet, RefreshControl, Pressable, Modal } from 'react-native';
 import {
   getMyUpcomingAssignments,
   type MyAssignment,
@@ -27,15 +18,18 @@ import { useCurrent } from '../../context/CurrentContext';
 export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssignment) => void }) {
   const { accountId, accountName, teamId, teamName, setAccount, setTeam, clear } = useCurrent();
 
+  // data + ui state
   const [items, setItems] = useState<MyAssignment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // pickers
   const [accounts, setAccounts] = useState<AccountMembership[] | null>(null);
   const [teams, setTeams] = useState<TeamMembership[] | null>(null);
   const [pickAccountOpen, setPickAccountOpen] = useState(false);
   const [pickTeamOpen, setPickTeamOpen] = useState(false);
 
+  // load accounts once
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -53,6 +47,7 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
     };
   }, []);
 
+  // load teams when account changes
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -74,11 +69,13 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
     };
   }, [accountId]);
 
+  // scope
   const scope: RosterScope = useMemo(
     () => (teamId ? 'team' : accountId ? 'account' : 'all'),
     [accountId, teamId]
   );
 
+  // load assignments
   const load = useCallback(async () => {
     setError(null);
     setRefreshing(true);
@@ -94,11 +91,11 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
   }, [scope, accountId, teamId]);
 
   useEffect(() => {
-    setItems(null);
+    setItems(null); // avoid flicker between scope changes
     load();
   }, [load]);
 
-  // Ensure soonest first explicitly (defensive, even though API orders ASC)
+  // derived + formatting
   const data = useMemo(
     () =>
       (items ?? [])
@@ -114,40 +111,75 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
       day: d.getDate().toString().padStart(2, '0'),
     };
   };
+
   const fmtTimeRange = (sIso: string, eIso: string) => {
-    const s = new Date(sIso),
-      e = new Date(eIso);
-    const day = s.toLocaleDateString(undefined, { weekday: 'short' });
+    const s = new Date(sIso);
+    const e = new Date(eIso);
     const hhmm = (d: Date) =>
       d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(' ', '');
-    return `${day} ${hhmm(s)} – ${hhmm(e)}`;
+    return `${hhmm(s)} – ${hhmm(e)}`;
   };
 
+  // filter summary banner
+  const filterSummary = teamName
+    ? `Showing only ${teamName} events`
+    : accountName
+      ? `Showing only ${accountName} events`
+      : 'Showing all events';
+
+  const anyFilterActive = !!accountId || !!teamId;
+
   const Header = () => (
-    <View style={{ padding: 16, gap: 12 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Text style={styles.screenTitle}>My roster</Text>
+    <View style={{ gap: 12, marginBottom: 4, paddingHorizontal: 16, paddingTop: 12 }}>
+      {/* Intro card */}
+      <View style={styles.card}>
+        <Text style={styles.h1}>My Roster</Text>
+        <Text style={styles.meta}>
+          Tap a rostered event to view details (and other dates in the series).
+        </Text>
+        {error ? <Text style={[styles.meta, { color: '#c00' }]}>{error}</Text> : null}
       </View>
 
-      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-        <Chip
-          label={accountName ? accountName : 'Account'}
-          onPress={() => setPickAccountOpen(true)}
-          active={!!accountId}
-        />
-        <Chip
-          label={teamName ? `Team ${teamName}` : 'Team'}
-          onPress={() => accountId && setPickTeamOpen(true)}
-          disabled={!accountId}
-          active={!!teamId}
-        />
+      {/* Filters */}
+      <View style={styles.sectionBar}>
+        <Text style={styles.sectionBarText}>Filters</Text>
       </View>
-
-      {error ? <Text style={styles.err}>{error}</Text> : null}
-      {items === null ? (
-        <View style={{ paddingVertical: 8 }}>
-          <ActivityIndicator />
+      <View style={[styles.rowBetween, { alignItems: 'center' }]}>
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', flex: 1 }}>
+          <Chip
+            label={accountName ? accountName : 'Select account'}
+            onPress={() => setPickAccountOpen(true)}
+            active={!!accountId}
+          />
+          <Chip
+            label={teamName ? `Team ${teamName}` : 'Select team'}
+            onPress={() => accountId && setPickTeamOpen(true)}
+            disabled={!accountId}
+            active={!!teamId}
+          />
         </View>
+
+        {anyFilterActive ? (
+          <Pressable
+            onPress={() => {
+              clear(); // resets account + team in context
+            }}
+            style={styles.clearFilterBtn}
+            android_ripple={{ color: '#e5e7eb' }}
+            accessibilityRole="button"
+            accessibilityLabel="Clear filters"
+          >
+            <Text style={styles.clearFilterText}>Clear</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {/* Filter summary line */}
+      <Text style={styles.filterSummary}>{filterSummary}</Text>
+
+      {/* Quiet loading text (no spinner flicker) */}
+      {items === null ? (
+        <Text style={[styles.meta, { paddingLeft: 2 }]}>Loading entries…</Text>
       ) : null}
 
       <Text style={styles.section}>Upcoming</Text>
@@ -160,14 +192,29 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
         data={data}
         keyExtractor={(it) => it.assignment_id}
         ListHeaderComponent={<Header />}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={load}
+            tintColor="#111"
+            colors={['#111']}
+          />
+        }
         ListEmptyComponent={
-          data.length === 0 ? (
-            <Text style={[styles.muted, { padding: 16 }]}>No upcoming assignments.</Text>
+          items !== null && data.length === 0 ? (
+            <Text style={[styles.meta, { paddingHorizontal: 16, paddingVertical: 12 }]}>
+              No upcoming assignments.
+            </Text>
           ) : null
         }
         renderItem={({ item }) => (
-          <Pressable onPress={() => onOpenDetails(item)} style={styles.card}>
+          <Pressable
+            onPress={() => onOpenDetails(item)}
+            style={[styles.cardRow, { marginHorizontal: 16, marginTop: 10 }]}
+            android_ripple={{ color: '#e5e7eb' }}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${item.label}`}
+          >
             <View style={styles.dateBadge}>
               <Text style={styles.dateDow}>{fmtDayBadge(item.starts_at).dow}</Text>
               <Text style={styles.dateDay}>{fmtDayBadge(item.starts_at).day}</Text>
@@ -178,7 +225,7 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
                 {item.account_name ?? 'Account'}
                 {item.team_name ? ` — ${item.team_name}` : ''}
               </Text>
-              <Text style={styles.metaLine}>🗓️ {fmtTimeRange(item.starts_at, item.ends_at)}</Text>
+              <Text style={styles.metaLine}>{fmtTimeRange(item.starts_at, item.ends_at)}</Text>
             </View>
           </Pressable>
         )}
@@ -210,7 +257,11 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
         title="Select team"
         open={pickTeamOpen}
         onClose={() => setPickTeamOpen(false)}
-        items={(teams ?? []).map((t) => ({ id: t.team_id, title: t.team_name, subtitle: t.role }))}
+        items={(teams ?? []).map((t) => ({
+          id: t.team_id,
+          title: t.team_name,
+          subtitle: t.role,
+        }))}
         onSelect={(id) => {
           if (!id) setTeam('', '');
           else {
@@ -226,7 +277,7 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
   );
 }
 
-/* small bits */
+/* ---------- Small bits ---------- */
 function Chip({
   label,
   onPress,
@@ -242,12 +293,14 @@ function Chip({
     <Pressable
       disabled={disabled}
       onPress={onPress}
-      style={[styles.chip, active && styles.chipActive, disabled && styles.chipDisabled]}
+      style={[styles.chip, active && styles.chipActive, disabled && { opacity: 0.5 }]}
+      android_ripple={{ color: '#e5e7eb' }}
     >
       <Text style={styles.chipLabel}>{label}</Text>
     </Pressable>
   );
 }
+
 function PickerModal({
   title,
   open,
@@ -273,17 +326,20 @@ function PickerModal({
       </Pressable>
       <View style={styles.modalSheet}>
         <Text style={styles.modalTitle}>{title}</Text>
+
         {allowClear ? (
           <Pressable style={styles.modalItem} onPress={() => onSelect(null)}>
             <Text style={[styles.modalItemText, { color: '#c00' }]}>Clear selection</Text>
           </Pressable>
         ) : null}
+
         {items.map((it) => (
           <Pressable key={it.id} style={styles.modalItem} onPress={() => onSelect(it.id)}>
             <Text style={styles.modalItemText}>{it.title}</Text>
             {it.subtitle ? <Text style={styles.modalItemSub}>{it.subtitle}</Text> : null}
           </Pressable>
         ))}
+
         <Pressable style={[styles.modalItem, { alignItems: 'center' }]} onPress={onClose}>
           <Text style={styles.modalClose}>Close</Text>
         </Pressable>
@@ -292,33 +348,32 @@ function PickerModal({
   );
 }
 
+/* ---------- Styles (aligned with App + other screens) ---------- */
 const styles = StyleSheet.create({
-  screenTitle: { fontSize: 24, fontWeight: '800' },
-  section: { fontSize: 14, fontWeight: '700' },
-  err: { color: '#c00' },
-  muted: { color: '#666' },
+  // tokens
+  h1: { fontSize: 18, fontWeight: '700', color: '#111' },
+  meta: { fontSize: 13, color: '#6b7280' },
+  section: { fontSize: 14, fontWeight: '800', color: '#111', marginTop: 4, marginBottom: 2 },
 
-  chip: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between' },
+
+  // section bar (like memberships)
+  sectionBar: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderWidth: 1,
-    borderColor: '#e1e1e1',
-    borderRadius: 12,
-    backgroundColor: '#fff',
+    borderColor: '#ececec',
   },
-  chipActive: { borderColor: '#3b82f6' },
-  chipDisabled: { opacity: 0.5 },
-  chipLabel: { fontSize: 14, fontWeight: '600', color: '#222' },
+  sectionBarText: { fontSize: 13, fontWeight: '800', color: '#111', letterSpacing: 0.2 },
 
+  // cards
   card: {
-    flexDirection: 'row',
-    gap: 12,
     borderWidth: 1,
     borderColor: '#ececec',
     borderRadius: 14,
     padding: 12,
-    marginHorizontal: 16,
-    marginTop: 10,
     backgroundColor: '#fff',
     shadowColor: '#000',
     shadowOpacity: 0.06,
@@ -326,20 +381,77 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
-  dateBadge: {
-    width: 44,
-    borderRadius: 10,
-    backgroundColor: '#eaf2ff',
-    alignItems: 'center',
-    paddingVertical: 6,
+  cardRow: {
+    flexDirection: 'row',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#ececec',
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
-  dateDow: { fontSize: 12, color: '#3b82f6', fontWeight: '800' },
-  dateDay: { fontSize: 18, color: '#1f2937', fontWeight: '800' },
   cardTitle: { fontSize: 16, fontWeight: '700', color: '#111' },
   cardSub: { fontSize: 12, color: '#555' },
   metaLine: { fontSize: 13, color: '#444' },
 
-  modalBackdrop: { position: 'absolute', inset: 0, backgroundColor: '#0008' },
+  // chips — now visually distinct from the section bar
+  chip: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  chipActive: {
+    backgroundColor: '#eef1f5',
+    borderColor: '#cbd5e1',
+  },
+  chipLabel: { fontSize: 14, fontWeight: '800', color: '#111' },
+
+  // clear filters (subtle button)
+  clearFilterBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#eef1f5',
+    borderWidth: 1,
+    borderColor: '#ececec',
+    alignSelf: 'flex-start',
+    marginLeft: 8,
+  },
+  clearFilterText: { fontSize: 12, fontWeight: '800', color: '#111' },
+
+  // filter summary
+  filterSummary: { fontSize: 12, color: '#111', fontWeight: '700', marginTop: 2 },
+
+  // date badge — cleaner: white with soft border
+  dateBadge: {
+    width: 44,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  dateDow: { fontSize: 12, color: '#111', fontWeight: '800' },
+  dateDay: { fontSize: 18, color: '#111', fontWeight: '800' },
+
+  // modal
+  modalBackdrop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: '#0006',
+  },
   modalSheet: {
     position: 'absolute',
     left: 12,
@@ -349,10 +461,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     padding: 12,
     gap: 6,
+    borderWidth: 1,
+    borderColor: '#ececec',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
-  modalTitle: { fontSize: 16, fontWeight: '800', marginBottom: 4 },
+  modalTitle: { fontSize: 16, fontWeight: '800', color: '#111', marginBottom: 4 },
   modalItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  modalItemText: { fontSize: 16, fontWeight: '600', color: '#111' },
+  modalItemText: { fontSize: 16, fontWeight: '700', color: '#111' },
   modalItemSub: { fontSize: 12, color: '#666' },
-  modalClose: { fontSize: 14, fontWeight: '700', color: '#3b82f6' },
+  modalClose: { fontSize: 14, fontWeight: '800', color: '#111' },
 });
