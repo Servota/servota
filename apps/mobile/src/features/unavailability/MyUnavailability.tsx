@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 // apps/mobile/src/features/unavailability/MyUnavailability.tsx
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -157,7 +156,6 @@ export default function MyUnavailability() {
   };
 
   // Remove flow
-  const openRemove = (row: Unavailability) => setRemoveTarget(row);
   const doRemove = async () => {
     const id = removeTarget?.id;
     if (!id) return;
@@ -240,7 +238,7 @@ export default function MyUnavailability() {
         ListHeaderComponent={<Header />}
         refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}
         ListEmptyComponent={
-          // --- requested: show a calm text while first load happens, no spinner/flicker
+          // calm text while first load happens, no spinner/flicker
           !hasLoadedOnce ? (
             <Text style={[styles.meta, { padding: 16 }]}>Loading entries…</Text>
           ) : items.length === 0 ? (
