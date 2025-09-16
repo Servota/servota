@@ -7,6 +7,8 @@ import { openReplacementRequest } from '../../api/replacements';
 import { supabase } from '../../lib/supabase';
 import { proposeCrossDateSwap } from '../../api/swaps';
 
+const BRAND_BLUE = '#1C94B3'; // match MyRoster
+
 export type SelectedEvent = {
   event_id: string;
   template_id: string | null;
@@ -21,12 +23,12 @@ export type SelectedEvent = {
 
 export default function EventDetails({
   selected,
-  setSelected: _setSelected, // kept for future
+  setSelected: _setSelected, // reserved for future
 }: {
   selected: SelectedEvent;
   setSelected: (_: SelectedEvent) => void;
 }) {
-  // undefined => still loading; [] => loaded empty
+  // undefined → still loading; [] → loaded empty
   const [siblings, setSiblings] = useState<EventRow[] | undefined>(undefined);
 
   const [assigneeNameByEvent, setAssigneeNameByEvent] = useState<Record<string, string>>({});
@@ -48,7 +50,7 @@ export default function EventDetails({
         return;
       }
 
-      // Other dates in the same series (soonest first), excluding the base date
+      // Other dates in the series (soonest first), excluding the base
       const rows = (await getUpcomingEventsByTemplate(selected.template_id, 50)).filter(
         (r) => r.event_id !== selected.event_id
       );
@@ -72,6 +74,7 @@ export default function EventDetails({
         setBaseAssignmentId(null);
       }
 
+      // Early exit if no siblings
       if (rows.length === 0) {
         if (mounted) {
           setSiblings([]);
@@ -82,7 +85,7 @@ export default function EventDetails({
         return;
       }
 
-      // Batch fetch earliest assignments per sibling event
+      // Batch: earliest assignment per sibling event
       const evIds = rows.map((r) => r.event_id);
       const { data: asgRows } = await supabase
         .from('assignments')
@@ -97,22 +100,27 @@ export default function EventDetails({
       for (const a of asgRows ?? []) {
         if (!firstByEvent[a.event_id]) {
           firstByEvent[a.event_id] = { id: a.id, user_id: a.user_id };
-          userSet.add(a.user_id);
+          if (a.user_id) userSet.add(a.user_id);
         }
       }
 
-      // Batch fetch profile names
+      // Resolve names directly from profiles (RLS now allows account-wide via policy)
+      const userIds = Array.from(userSet);
       let profilesByUser: Record<string, string> = {};
-      if (userSet.size > 0) {
-        const { data: profRows } = await supabase
+      if (userIds.length > 0) {
+        const { data: profRows, error: profErr } = await supabase
           .from('profiles')
           .select('user_id, full_name')
-          .in('user_id', Array.from(userSet));
-        profilesByUser = Object.fromEntries(
-          (profRows ?? []).map((p: any) => [p.user_id, p.full_name ?? 'Assigned'])
-        );
+          .in('user_id', userIds);
+
+        if (!profErr && profRows) {
+          profilesByUser = Object.fromEntries(
+            profRows.map((p: any) => [p.user_id, (p.full_name ?? '').trim()])
+          );
+        }
       }
 
+      // Build UI maps
       const names: Record<string, string> = {};
       const mine: Record<string, boolean> = {};
       const ids: Record<string, string | null> = {};
@@ -122,7 +130,8 @@ export default function EventDetails({
         if (first) {
           ids[ev.event_id] = first.id;
           mine[ev.event_id] = me ? first.user_id === me : false;
-          names[ev.event_id] = profilesByUser[first.user_id] ?? 'Assigned';
+          const resolved = profilesByUser[first.user_id] || 'Assigned';
+          names[ev.event_id] = resolved;
         } else {
           ids[ev.event_id] = null;
           mine[ev.event_id] = false;
@@ -139,7 +148,7 @@ export default function EventDetails({
     return () => {
       mounted = false;
     };
-  }, [selected.event_id, selected.template_id]);
+  }, [selected.event_id, selected.template_id, selected.account_id, selected.team_id]);
 
   const fmtTimeRange = (sIso: string, eIso: string) => {
     const s = new Date(sIso);
@@ -152,6 +161,14 @@ export default function EventDetails({
     const hhmm = (d: Date) =>
       d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(' ', '');
     return `${day} • ${hhmm(s)}–${hhmm(e)}`;
+  };
+
+  const fmtDayBadge = (iso: string) => {
+    const d = new Date(iso);
+    return {
+      dow: d.toLocaleDateString(undefined, { weekday: 'short' }),
+      day: d.getDate().toString().padStart(2, '0'),
+    };
   };
 
   const cantMakeIt = async () => {
@@ -191,12 +208,14 @@ export default function EventDetails({
       return;
     }
 
+    const src = (siblings ?? []).find((e) => e.event_id === targetId)!;
+
     const ok = await new Promise<boolean>((resolve) => {
       Alert.alert(
         'Propose this swap?',
         `• ${fmtTimeRange(selected.starts_at, selected.ends_at)}\n→\n• ${fmtTimeRange(
-          target!.starts_at,
-          target!.ends_at
+          src.starts_at,
+          src.ends_at
         )}`,
         [
           { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
@@ -222,39 +241,47 @@ export default function EventDetails({
 
   return (
     <View style={{ flex: 1, paddingHorizontal: 16, gap: 12 }}>
-      {/* Base event (fixed card) */}
-      <View style={styles.card}>
-        <Text style={styles.h1}>{selected.label}</Text>
-        <Text style={styles.cardSub}>
-          {selected.account_name ?? 'Account'}
-          {selected.team_name ? ` — ${selected.team_name}` : ''}
-        </Text>
-        <Text style={styles.metaLine}>{fmtTimeRange(selected.starts_at, selected.ends_at)}</Text>
+      {/* Base event (fixed card with date badge) */}
+      <View style={[styles.card, { flexDirection: 'row', gap: 12 }]}>
+        <View style={styles.dateBadge}>
+          <Text style={styles.dateDow}>{fmtDayBadge(selected.starts_at).dow}</Text>
+          <Text style={styles.dateDay}>{fmtDayBadge(selected.starts_at).day}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.h1}>{selected.label}</Text>
+          <Text style={styles.cardSub}>
+            {selected.account_name ?? 'Account'}
+            {selected.team_name ? ` — ${selected.team_name}` : ''}
+          </Text>
+          <Text style={styles.metaLine}>{fmtTimeRange(selected.starts_at, selected.ends_at)}</Text>
 
-        <View style={{ height: 8 }} />
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable
-            onPress={cantMakeIt}
-            style={styles.subtleBtn}
-            android_ripple={{ color: '#e5e7eb' }}
-            accessibilityRole="button"
-            accessibilityLabel="Open replacement request"
-          >
-            <Text style={styles.subtleBtnText}>Can't make it</Text>
-          </Pressable>
+          <View style={{ height: 8 }} />
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {/* Filled neutral button */}
+            <Pressable
+              onPress={cantMakeIt}
+              style={styles.subtleBtn}
+              android_ripple={{ color: '#e5e7eb' }}
+              accessibilityRole="button"
+              accessibilityLabel="Open replacement request"
+            >
+              <Text style={styles.subtleBtnText}>Can't make it</Text>
+            </Pressable>
 
-          <Pressable
-            onPress={doProposeCrossDateSwap}
-            disabled={!proposeEnabled}
-            style={[styles.subtleBtn, !proposeEnabled && { opacity: 0.5 }]}
-            android_ripple={{ color: '#e5e7eb' }}
-            accessibilityRole="button"
-            accessibilityLabel={target ? 'Propose swap' : 'Select a date below to enable swap'}
-          >
-            <Text style={styles.subtleBtnText}>
-              {target ? 'Propose swap' : 'Select a date below'}
-            </Text>
-          </Pressable>
+            {/* Outline neutral button */}
+            <Pressable
+              onPress={doProposeCrossDateSwap}
+              disabled={!proposeEnabled}
+              style={[styles.subtleBtnOutline, !proposeEnabled && { opacity: 0.5 }]}
+              android_ripple={{ color: '#e5e7eb' }}
+              accessibilityRole="button"
+              accessibilityLabel={target ? 'Propose swap' : 'Select a date below to enable swap'}
+            >
+              <Text style={styles.subtleBtnText}>
+                {target ? 'Propose swap' : 'Select a date below'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </View>
 
@@ -263,13 +290,15 @@ export default function EventDetails({
         <Text style={styles.sectionBarText}>Other dates in this series</Text>
       </View>
 
-      {/* Flicker-free list:
-          - siblings === undefined  -> silently loading (show nothing)
-          - siblings loaded & length === 0 -> muted empty line
-          - siblings loaded & length > 0 -> list */}
-      {siblings === undefined ? null : (siblings ?? []).length === 0 ? (
+      {/* Quiet loading line */}
+      {siblings === undefined ? (
+        <Text style={[styles.meta, { paddingLeft: 2 }]}>Loading entries…</Text>
+      ) : null}
+
+      {/* List / empty state (no date badges below) */}
+      {siblings !== undefined && (siblings ?? []).length === 0 ? (
         <Text style={styles.meta}>No other upcoming dates.</Text>
-      ) : (
+      ) : siblings !== undefined ? (
         <FlatList
           data={siblings ?? []}
           keyExtractor={(it) => it.event_id}
@@ -292,18 +321,15 @@ export default function EventDetails({
                 <View style={{ flex: 1, gap: 4 }}>
                   <Text style={styles.cardTitle}>{item.label}</Text>
                   <Text style={styles.metaLine}>{fmtTimeRange(item.starts_at, item.ends_at)}</Text>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <Text style={styles.assigneeLine}>
-                      Assigned: {assigneeNameByEvent[item.event_id] ?? '—'}
-                    </Text>
-                    {mine ? <Text style={styles.badgeMine}>Mine</Text> : null}
-                  </View>
+                  <Text style={styles.assigneeLine}>
+                    Assigned: {assigneeNameByEvent[item.event_id] ?? '—'}
+                  </Text>
                 </View>
               </Pressable>
             );
           }}
         />
-      )}
+      ) : null}
     </View>
   );
 }
@@ -355,24 +381,38 @@ const styles = StyleSheet.create({
   cardSub: { fontSize: 12, color: '#555', marginTop: 2 },
 
   assigneeLine: { fontSize: 12, color: '#333' },
-  badgeMine: {
-    fontSize: 11,
-    color: '#0a3',
-    backgroundColor: '#e6f8ec',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
 
-  // subtle buttons (reuse Clear style vibes)
+  // subtle buttons (filled + outline)
   subtleBtn: {
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 12,
-    backgroundColor: '#eef1f5',
+    backgroundColor: '#eef1f5', // filled neutral
     borderWidth: 1,
     borderColor: '#ececec',
     alignSelf: 'flex-start',
   },
+  subtleBtnOutline: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#fff', // outline variant
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    alignSelf: 'flex-start',
+  },
   subtleBtnText: { fontSize: 12, fontWeight: '800', color: '#111' },
+
+  // date badge (match MyRoster)
+  dateBadge: {
+    width: 44,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: BRAND_BLUE,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  dateDow: { fontSize: 12, color: BRAND_BLUE, fontWeight: '700' },
+  dateDay: { fontSize: 18, color: '#111', fontWeight: '800' },
 });
