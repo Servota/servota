@@ -175,12 +175,12 @@ export default function MyRoster({ onOpenDetails }: { onOpenDetails: (a: MyAssig
       {/* Filter summary line */}
       <Text style={styles.filterSummary}>{filterSummary}</Text>
 
-      {/* Quiet loading text (no spinner flicker) */}
-      {items === null ? (
-        <Text style={[styles.meta, { paddingLeft: 2 }]}>Loading entries…</Text>
-      ) : null}
-
       <Text style={styles.section}>Upcoming</Text>
+
+      {/* Quiet loading text (no spinner flicker) — now shown under "Upcoming" */}
+      {items === null ? (
+        <Text style={[styles.meta, { paddingLeft: 2, marginTop: 2 }]}>Loading entries…</Text>
+      ) : null}
     </View>
   );
 

@@ -241,53 +241,57 @@ export default function EventDetails({
 
   return (
     <View style={{ flex: 1, paddingHorizontal: 16, gap: 12 }}>
-      {/* Base event (fixed card with date badge) */}
-      <View style={[styles.card, { flexDirection: 'row', gap: 12 }]}>
-        <View style={styles.dateBadge}>
-          <Text style={styles.dateDow}>{fmtDayBadge(selected.starts_at).dow}</Text>
-          <Text style={styles.dateDay}>{fmtDayBadge(selected.starts_at).day}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.h1}>{selected.label}</Text>
-          <Text style={styles.cardSub}>
-            {selected.account_name ?? 'Account'}
-            {selected.team_name ? ` — ${selected.team_name}` : ''}
-          </Text>
-          <Text style={styles.metaLine}>{fmtTimeRange(selected.starts_at, selected.ends_at)}</Text>
-
-          <View style={{ height: 8 }} />
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {/* Filled neutral button */}
-            <Pressable
-              onPress={cantMakeIt}
-              style={styles.subtleBtn}
-              android_ripple={{ color: '#e5e7eb' }}
-              accessibilityRole="button"
-              accessibilityLabel="Open replacement request"
-            >
-              <Text style={styles.subtleBtnText}>Can't make it</Text>
-            </Pressable>
-
-            {/* Outline neutral button */}
-            <Pressable
-              onPress={doProposeCrossDateSwap}
-              disabled={!proposeEnabled}
-              style={[styles.subtleBtnOutline, !proposeEnabled && { opacity: 0.5 }]}
-              android_ripple={{ color: '#e5e7eb' }}
-              accessibilityRole="button"
-              accessibilityLabel={target ? 'Propose swap' : 'Select a date below to enable swap'}
-            >
-              <Text style={styles.subtleBtnText}>
-                {target ? 'Propose swap' : 'Select a date below'}
-              </Text>
-            </Pressable>
+      {/* Base event (fixed card with inline date badge) */}
+      <View style={styles.card}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={styles.dateBadge}>
+            <Text style={styles.dateDow}>{fmtDayBadge(selected.starts_at).dow}</Text>
+            <Text style={styles.dateDay}>{fmtDayBadge(selected.starts_at).day}</Text>
           </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.h1}>{selected.label}</Text>
+            <Text style={styles.cardSub}>
+              {selected.account_name ?? 'Account'}
+              {selected.team_name ? ` — ${selected.team_name}` : ''}
+            </Text>
+            <Text style={styles.metaLine}>
+              {fmtTimeRange(selected.starts_at, selected.ends_at)}
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ height: 8 }} />
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {/* Filled neutral button */}
+          <Pressable
+            onPress={cantMakeIt}
+            style={styles.subtleBtn}
+            android_ripple={{ color: '#e5e7eb' }}
+            accessibilityRole="button"
+            accessibilityLabel="Open replacement request"
+          >
+            <Text style={styles.subtleBtnText}>Can't make it</Text>
+          </Pressable>
+
+          {/* Outline neutral button */}
+          <Pressable
+            onPress={doProposeCrossDateSwap}
+            disabled={!proposeEnabled}
+            style={[styles.subtleBtnOutline, !proposeEnabled && { opacity: 0.5 }]}
+            android_ripple={{ color: '#e5e7eb' }}
+            accessibilityRole="button"
+            accessibilityLabel={target ? 'Propose swap' : 'Select a date below to enable swap'}
+          >
+            <Text style={styles.subtleBtnText}>
+              {target ? 'Propose swap' : 'Select a date below'}
+            </Text>
+          </Pressable>
         </View>
       </View>
 
       {/* Section header */}
       <View style={styles.sectionBar}>
-        <Text style={styles.sectionBarText}>Other dates in this series</Text>
+        <Text style={styles.sectionBarText}>Other events in this series</Text>
       </View>
 
       {/* Quiet loading line */}

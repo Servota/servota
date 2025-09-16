@@ -4,10 +4,11 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
-  ActivityIndicator,
+  ScrollView,
   RefreshControl,
   Pressable,
+  LayoutChangeEvent,
+  Dimensions,
 } from 'react-native';
 import {
   getMyAccountMemberships,
@@ -16,78 +17,79 @@ import {
   type TeamMembership,
 } from '../../api/memberships';
 
-type Row =
-  | { kind: 'header' }
-  | { kind: 'account'; account: AccountMembership; expanded: boolean; teams?: TeamMembership[] }
-  | { kind: 'footer'; accountsCount: number; teamsCount: number };
+const WINDOW_HEIGHT = Dimensions.get('window').height;
 
 export default function MyMemberships() {
+  // data
   const [accounts, setAccounts] = useState<AccountMembership[] | null>(null);
-  const [teamsByAccount, setTeamsByAccount] = useState<Record<string, TeamMembership[]>>({});
+  const [teamsByAccount, setTeamsByAccount] = useState<
+    Record<string, TeamMembership[] | undefined>
+  >({});
+
+  // ui
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null);
   const [expandedTeamIds, setExpandedTeamIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
+  // layout gating for PR control to avoid phantom spinner on short content
+  const [contentHeight, setContentHeight] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
+  const enablePullToRefresh = hasLoadedOnce && contentHeight > (containerHeight || WINDOW_HEIGHT);
+
+  const onContainerLayout = (e: LayoutChangeEvent) => {
+    setContainerHeight(e.nativeEvent.layout.height);
+  };
+  const onContentSizeChange = (_w: number, h: number) => {
+    setContentHeight(h);
+  };
+
+  // ------- loads -------
+  const loadAccounts = useCallback(async () => {
     setError(null);
-    setLoading(true);
     try {
       const accs = await getMyAccountMemberships();
       setAccounts(accs);
-
-      if (expandedAccountId) {
-        const teams = await getMyTeamMemberships(expandedAccountId);
-        setTeamsByAccount((prev) => ({ ...prev, [expandedAccountId]: teams }));
-      }
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load memberships');
       setAccounts([]);
       setTeamsByAccount({});
     } finally {
       setHasLoadedOnce(true);
-      setLoading(false);
     }
-  }, [expandedAccountId]);
+  }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    // Initial load (no RefreshControl mounted, bounces/overscroll disabled)
+    loadAccounts();
+  }, [loadAccounts]);
 
-  const totalTeams = useMemo(
-    () => Object.values(teamsByAccount).reduce((sum, list) => sum + (list?.length ?? 0), 0),
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await loadAccounts();
+    setIsRefreshing(false);
+  }, [loadAccounts]);
+
+  const ensureTeamsLoaded = useCallback(
+    async (accountId: string) => {
+      if (teamsByAccount[accountId] !== undefined) return;
+      try {
+        const rows = await getMyTeamMemberships(accountId);
+        setTeamsByAccount((prev) => ({ ...prev, [accountId]: rows }));
+      } catch {
+        setTeamsByAccount((prev) => ({ ...prev, [accountId]: [] }));
+      }
+    },
     [teamsByAccount]
   );
 
-  const rows: Row[] = useMemo(() => {
-    if (!accounts) return [{ kind: 'header' }];
-    const r: Row[] = [{ kind: 'header' }];
-    for (const a of accounts) {
-      r.push({
-        kind: 'account',
-        account: a,
-        expanded: expandedAccountId === a.account_id,
-        teams: teamsByAccount[a.account_id],
-      });
-    }
-    r.push({ kind: 'footer', accountsCount: accounts.length, teamsCount: totalTeams });
-    return r;
-  }, [accounts, expandedAccountId, teamsByAccount, totalTeams]);
-
-  const toggleAccount = async (account: AccountMembership) => {
+  // ------- interactions -------
+  const toggleAccount = (account: AccountMembership) => {
     const willExpand = expandedAccountId !== account.account_id;
-    setExpandedAccountId(willExpand ? account.account_id : null);
     setExpandedTeamIds(new Set());
-
-    if (willExpand && teamsByAccount[account.account_id] === undefined) {
-      try {
-        const teams = await getMyTeamMemberships(account.account_id);
-        setTeamsByAccount((prev) => ({ ...prev, [account.account_id]: teams }));
-      } catch {
-        setTeamsByAccount((prev) => ({ ...prev, [account.account_id]: [] }));
-      }
-    }
+    setExpandedAccountId(willExpand ? account.account_id : null);
+    if (willExpand) void ensureTeamsLoaded(account.account_id);
   };
 
   const toggleTeam = (teamId: string) => {
@@ -99,141 +101,151 @@ export default function MyMemberships() {
     });
   };
 
+  // ------- derived -------
+  const totalTeams = useMemo(
+    () =>
+      Object.values(teamsByAccount).reduce(
+        (sum, list) => sum + (Array.isArray(list) ? list.length : 0),
+        0
+      ),
+    [teamsByAccount]
+  );
+  const list = (accounts ?? []) as AccountMembership[];
+
   return (
-    <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }}>
-      <FlatList
-        data={rows}
-        keyExtractor={(_, i) => String(i)}
+    <View style={{ flex: 1 }} onLayout={onContainerLayout}>
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 }}
+        onContentSizeChange={onContentSizeChange}
+        // Hard stop any first-paint overscroll/spinner
+        bounces={enablePullToRefresh} // iOS: only bounce after first load + tall content
+        overScrollMode={enablePullToRefresh ? 'auto' : 'never'} // Android
+        // Mount RefreshControl only when safe (post-load + tall)
         refreshControl={
-          <RefreshControl
-            refreshing={loading}
-            onRefresh={load}
-            tintColor="#111"
-            colors={['#111']}
-          />
+          enablePullToRefresh ? (
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              tintColor="#111"
+              colors={['#111']}
+            />
+          ) : undefined
         }
-        renderItem={({ item }) => {
-          if (item.kind === 'header') {
-            return (
-              <View style={{ gap: 6, marginBottom: 8 }}>
-                <View style={styles.card}>
-                  <Text style={styles.h1}>My Memberships</Text>
-                  <Text style={styles.meta}>
-                    Tap an account to view details and your teams in that account.
-                  </Text>
-                  {error ? <Text style={[styles.meta, { color: '#c00' }]}>{error}</Text> : null}
-                </View>
+      >
+        {/* Header */}
+        <View style={[styles.card, { marginBottom: 8 }]}>
+          <Text style={styles.h1}>My Memberships</Text>
+          <Text style={styles.meta}>
+            Tap an account to view details and your teams in that account.
+          </Text>
+          {error ? <Text style={[styles.meta, { color: '#c00' }]}>{error}</Text> : null}
+        </View>
+        {!hasLoadedOnce ? (
+          <Text style={[styles.meta, { paddingLeft: 2 }]}>Loading entries…</Text>
+        ) : null}
 
-                {!hasLoadedOnce ? (
-                  <Text style={[styles.meta, { paddingLeft: 2 }]}>Loading entries…</Text>
-                ) : null}
-              </View>
-            );
-          }
-
-          if (item.kind === 'account') {
-            const a = item.account;
-            const teams = item.teams;
-            const expanded = item.expanded;
-
-            const accountDescription =
-              (a as any)?.account_description ?? (a as any)?.description ?? null;
-
-            return (
-              <View style={[styles.card, { marginTop: 10 }]}>
-                {/* Header row (only this is pressable) */}
-                <Pressable
-                  onPress={() => toggleAccount(a)}
-                  style={[styles.rowBetween, { alignItems: 'center' }]}
-                  android_ripple={{ color: '#e5e7eb' }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Account ${a.account_name}`}
-                >
-                  <View style={{ flex: 1, paddingRight: 10 }}>
-                    <Text style={styles.title}>{a.account_name}</Text>
-                    <View style={styles.badgeRow}>
-                      <Text style={styles.badgeLabel}>Account role</Text>
-                      <Text style={styles.badgeValue}>{a.role}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.chev}>{expanded ? '˄' : '˅'}</Text>
-                </Pressable>
-
-                {/* Expanded content (safe to tap inside) */}
-                {expanded && (
-                  <View style={{ gap: 12, marginTop: 10 }}>
-                    {accountDescription ? (
-                      <Text style={styles.desc}>{String(accountDescription)}</Text>
-                    ) : (
-                      <Text style={styles.meta}>
-                        Account details coming soon (description, contacts, policies).
-                      </Text>
-                    )}
-
-                    <View style={styles.sectionBar}>
-                      <Text style={styles.sectionBarText}>Teams</Text>
-                    </View>
-
-                    {teams === undefined ? (
-                      <ActivityIndicator />
-                    ) : teams.length === 0 ? (
-                      <Text style={styles.meta}>No team memberships in this account.</Text>
-                    ) : (
-                      <View style={{ gap: 8 }}>
-                        {teams.map((t) => {
-                          const teamId = t.team_id;
-                          const isOpen = expandedTeamIds.has(teamId);
-                          const teamDescription =
-                            (t as any)?.team_description ?? (t as any)?.description ?? null;
-
-                          return (
-                            <View key={teamId} style={styles.teamCard}>
-                              <Pressable
-                                onPress={() => toggleTeam(teamId)}
-                                style={styles.teamRow}
-                                android_ripple={{ color: '#e5e7eb' }}
-                                accessibilityRole="button"
-                                accessibilityLabel={`Team ${t.team_name}`}
-                              >
-                                <View style={{ flex: 1, paddingRight: 10 }}>
-                                  <Text style={styles.teamName}>{t.team_name}</Text>
-                                </View>
-                                <View style={styles.teamChip}>
-                                  <Text style={styles.teamChipText}>{t.role}</Text>
-                                </View>
-                                <Text style={[styles.chev, { marginLeft: 6 }]}>
-                                  {isOpen ? '˄' : '˅'}
-                                </Text>
-                              </Pressable>
-
-                              {isOpen && (
-                                <View style={{ paddingTop: 6 }}>
-                                  {teamDescription ? (
-                                    <Text style={styles.teamDesc}>{String(teamDescription)}</Text>
-                                  ) : (
-                                    <Text style={styles.meta}>Team description coming soon.</Text>
-                                  )}
-                                </View>
-                              )}
-                            </View>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </View>
-                )}
-              </View>
-            );
-          }
+        {/* Accounts */}
+        {list.map((a) => {
+          const expanded = expandedAccountId === a.account_id;
+          const teams = teamsByAccount[a.account_id]; // undefined => “Loading teams…”
+          const accountDescription =
+            (a as any)?.account_description ?? (a as any)?.description ?? null;
 
           return (
-            <Text style={[styles.meta, { textAlign: 'center', marginTop: 12 }]}>
-              Total: {item.accountsCount} account{item.accountsCount === 1 ? '' : 's'} •{' '}
-              {item.teamsCount} team{item.teamsCount === 1 ? '' : 's'}
-            </Text>
+            <View key={a.account_id} style={[styles.card, { marginTop: 10 }]}>
+              {/* Account header (press here only) */}
+              <Pressable
+                onPress={() => toggleAccount(a)}
+                style={[styles.rowBetween, { alignItems: 'center' }]}
+                android_ripple={{ color: '#e5e7eb' }}
+                accessibilityRole="button"
+                accessibilityLabel={`Account ${a.account_name}`}
+              >
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={styles.title}>{a.account_name}</Text>
+                  <View style={styles.badgeRow}>
+                    <Text style={styles.badgeLabel}>Account role</Text>
+                    <Text style={styles.badgeValue}>{a.role}</Text>
+                  </View>
+                </View>
+                <Text style={styles.chev}>{expanded ? '˄' : '˅'}</Text>
+              </Pressable>
+
+              {/* Expanded content */}
+              {expanded && (
+                <View style={{ gap: 12, marginTop: 10 }}>
+                  {accountDescription ? (
+                    <Text style={styles.desc}>{String(accountDescription)}</Text>
+                  ) : (
+                    <Text style={styles.meta}>
+                      Account details coming soon (description, contacts, policies).
+                    </Text>
+                  )}
+
+                  <View style={styles.sectionBar}>
+                    <Text style={styles.sectionBarText}>Teams</Text>
+                  </View>
+
+                  {teams === undefined ? (
+                    <Text style={styles.meta}>Loading teams…</Text>
+                  ) : teams.length === 0 ? (
+                    <Text style={styles.meta}>No team memberships in this account.</Text>
+                  ) : (
+                    <View style={{ gap: 8 }}>
+                      {teams.map((t) => {
+                        const teamId = t.team_id;
+                        const isOpen = expandedTeamIds.has(teamId);
+                        const teamDescription =
+                          (t as any)?.team_description ?? (t as any)?.description ?? null;
+
+                        return (
+                          <View key={teamId} style={styles.teamCard}>
+                            <Pressable
+                              onPress={() => toggleTeam(teamId)}
+                              style={styles.teamRow}
+                              android_ripple={{ color: '#e5e7eb' }}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Team ${t.team_name}`}
+                            >
+                              <View style={{ flex: 1, paddingRight: 10 }}>
+                                <Text style={styles.teamName}>{t.team_name}</Text>
+                              </View>
+                              <View style={styles.teamChip}>
+                                <Text style={styles.teamChipText}>{t.role}</Text>
+                              </View>
+                              <Text style={[styles.chev, { marginLeft: 6 }]}>
+                                {isOpen ? '˄' : '˅'}
+                              </Text>
+                            </Pressable>
+
+                            {isOpen && (
+                              <View style={{ paddingTop: 6 }}>
+                                {teamDescription ? (
+                                  <Text style={styles.teamDesc}>{String(teamDescription)}</Text>
+                                ) : (
+                                  <Text style={styles.meta}>Team description coming soon.</Text>
+                                )}
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
           );
-        }}
-      />
+        })}
+
+        {/* Footer totals */}
+        {Array.isArray(accounts) ? (
+          <Text style={[styles.meta, { textAlign: 'center', marginTop: 12 }]}>
+            Total: {accounts.length} account{accounts.length === 1 ? '' : 's'} • {totalTeams} team
+            {totalTeams === 1 ? '' : 's'}
+          </Text>
+        ) : null}
+      </ScrollView>
     </View>
   );
 }
