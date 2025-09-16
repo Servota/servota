@@ -1,15 +1,7 @@
 /* eslint-disable no-unused-vars */
 // apps/mobile/src/features/roster/EventDetails.tsx
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  Pressable,
-  Alert,
-  FlatList,
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, FlatList } from 'react-native';
 import { getUpcomingEventsByTemplate, type EventRow } from '../../api/events';
 import { openReplacementRequest } from '../../api/replacements';
 import { supabase } from '../../lib/supabase';
@@ -28,99 +20,121 @@ export type SelectedEvent = {
 };
 
 export default function EventDetails({
-  selected, // Base selection (fixed card)
-  setSelected: _setSelected, // unused for now (kept for future)
+  selected,
+  setSelected: _setSelected, // kept for future
 }: {
   selected: SelectedEvent;
   setSelected: (_: SelectedEvent) => void;
 }) {
-  const [siblings, setSiblings] = useState<EventRow[] | null>(null);
+  // undefined => still loading; [] => loaded empty
+  const [siblings, setSiblings] = useState<EventRow[] | undefined>(undefined);
+
   const [assigneeNameByEvent, setAssigneeNameByEvent] = useState<Record<string, string>>({});
   const [isMineByEvent, setIsMineByEvent] = useState<Record<string, boolean>>({});
   const [assignmentIdByEvent, setAssignmentIdByEvent] = useState<Record<string, string | null>>({});
   const [baseAssignmentId, setBaseAssignmentId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
-  // Target selection (a different date from the list)
   const [targetId, setTargetId] = useState<string | null>(null);
   const target = useMemo(
     () => (siblings ?? []).find((e) => e.event_id === targetId) ?? null,
     [siblings, targetId]
   );
 
-  // (kept for future refreshes)
-  const [_refreshTick, _setRefreshTick] = useState(0);
-
   useEffect(() => {
     let mounted = true;
     (async () => {
       if (!selected.template_id) {
-        setSiblings([]);
+        if (mounted) setSiblings([]);
         return;
       }
-      setLoading(true);
-      try {
-        // Load other dates in the series, soonest first, EXCLUDING the base event
-        const rows = (await getUpcomingEventsByTemplate(selected.template_id, 50)).filter(
-          (r) => r.event_id !== selected.event_id
-        );
-        if (!mounted) return;
-        setSiblings(rows);
 
-        // Who am I?
-        const { data: userRes } = await supabase.auth.getUser();
-        const me = userRes?.user?.id ?? '00000000-0000-0000-0000-000000000000';
+      // Other dates in the same series (soonest first), excluding the base date
+      const rows = (await getUpcomingEventsByTemplate(selected.template_id, 50)).filter(
+        (r) => r.event_id !== selected.event_id
+      );
+      if (!mounted) return;
 
-        // Base assignment id (mine on the base date)
-        {
-          const { data: baseAsg } = await supabase
-            .from('assignments')
-            .select('id')
-            .eq('event_id', selected.event_id)
-            .eq('user_id', me)
-            .limit(1)
-            .maybeSingle();
-          setBaseAssignmentId(baseAsg?.id ?? null);
-        }
+      // Who am I?
+      const { data: userRes } = await supabase.auth.getUser();
+      const me = userRes?.user?.id ?? null;
 
-        // For each sibling: first assignee (name), assignment id, and whether it's mine
-        const names: Record<string, string> = {};
-        const mine: Record<string, boolean> = {};
-        const ids: Record<string, string | null> = {};
-
-        for (const ev of rows) {
-          const { data: arow } = await supabase
-            .from('assignments')
-            .select('id, user_id')
-            .eq('event_id', ev.event_id)
-            .order('assigned_at', { ascending: true })
-            .limit(1)
-            .maybeSingle();
-
-          if (arow?.id) {
-            ids[ev.event_id] = arow.id;
-            mine[ev.event_id] = arow.user_id === me;
-
-            const { data: prof } = await supabase
-              .from('profiles')
-              .select('full_name')
-              .eq('user_id', arow.user_id)
-              .maybeSingle();
-            names[ev.event_id] = prof?.full_name ?? 'Assigned';
-          } else {
-            ids[ev.event_id] = null;
-            mine[ev.event_id] = false;
-            names[ev.event_id] = 'Unassigned';
-          }
-        }
-
-        if (!mounted) return;
-        setAssigneeNameByEvent(names);
-        setIsMineByEvent(mine);
-        setAssignmentIdByEvent(ids);
-      } finally {
-        if (mounted) setLoading(false);
+      // Base assignment id (mine on the base date)
+      if (me) {
+        const { data: baseAsg } = await supabase
+          .from('assignments')
+          .select('id')
+          .eq('event_id', selected.event_id)
+          .eq('user_id', me)
+          .limit(1)
+          .maybeSingle();
+        if (mounted) setBaseAssignmentId(baseAsg?.id ?? null);
+      } else if (mounted) {
+        setBaseAssignmentId(null);
       }
+
+      if (rows.length === 0) {
+        if (mounted) {
+          setSiblings([]);
+          setAssigneeNameByEvent({});
+          setIsMineByEvent({});
+          setAssignmentIdByEvent({});
+        }
+        return;
+      }
+
+      // Batch fetch earliest assignments per sibling event
+      const evIds = rows.map((r) => r.event_id);
+      const { data: asgRows } = await supabase
+        .from('assignments')
+        .select('id, user_id, event_id, assigned_at')
+        .in('event_id', evIds)
+        .order('assigned_at', { ascending: true });
+
+      const firstByEvent: Record<string, { id: string; user_id: string } | null> = {};
+      const userSet = new Set<string>();
+      for (const id of evIds) firstByEvent[id] = null;
+
+      for (const a of asgRows ?? []) {
+        if (!firstByEvent[a.event_id]) {
+          firstByEvent[a.event_id] = { id: a.id, user_id: a.user_id };
+          userSet.add(a.user_id);
+        }
+      }
+
+      // Batch fetch profile names
+      let profilesByUser: Record<string, string> = {};
+      if (userSet.size > 0) {
+        const { data: profRows } = await supabase
+          .from('profiles')
+          .select('user_id, full_name')
+          .in('user_id', Array.from(userSet));
+        profilesByUser = Object.fromEntries(
+          (profRows ?? []).map((p: any) => [p.user_id, p.full_name ?? 'Assigned'])
+        );
+      }
+
+      const names: Record<string, string> = {};
+      const mine: Record<string, boolean> = {};
+      const ids: Record<string, string | null> = {};
+
+      for (const ev of rows) {
+        const first = firstByEvent[ev.event_id];
+        if (first) {
+          ids[ev.event_id] = first.id;
+          mine[ev.event_id] = me ? first.user_id === me : false;
+          names[ev.event_id] = profilesByUser[first.user_id] ?? 'Assigned';
+        } else {
+          ids[ev.event_id] = null;
+          mine[ev.event_id] = false;
+          names[ev.event_id] = 'Unassigned';
+        }
+      }
+
+      if (!mounted) return;
+      setSiblings(rows);
+      setAssigneeNameByEvent(names);
+      setIsMineByEvent(mine);
+      setAssignmentIdByEvent(ids);
     })();
     return () => {
       mounted = false;
@@ -154,13 +168,12 @@ export default function EventDetails({
         teamId: selected.team_id,
         eventId: selected.event_id,
       });
-      Alert.alert('Request sent', 'We’ll notify eligible teammates via push and email.');
+      Alert.alert('Request sent', 'Eligible teammates will be notified.');
     } catch (e: any) {
       Alert.alert('Could not open replacement', e?.message ?? 'Please try again.');
     }
   };
 
-  // Propose cross-date swap (base ↔ target) — creates a pending request
   const doProposeCrossDateSwap = async () => {
     if (!targetId) return;
     const targetAsgId = assignmentIdByEvent[targetId] ?? null;
@@ -181,7 +194,10 @@ export default function EventDetails({
     const ok = await new Promise<boolean>((resolve) => {
       Alert.alert(
         'Propose this swap?',
-        `• ${fmtTimeRange(selected.starts_at, selected.ends_at)}\n↔\n• ${fmtTimeRange(target!.starts_at, target!.ends_at)}`,
+        `• ${fmtTimeRange(selected.starts_at, selected.ends_at)}\n→\n• ${fmtTimeRange(
+          target!.starts_at,
+          target!.ends_at
+        )}`,
         [
           { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
           { text: 'Send request', style: 'default', onPress: () => resolve(true) },
@@ -192,11 +208,7 @@ export default function EventDetails({
 
     try {
       await proposeCrossDateSwap(baseAssignmentId, targetAsgId, 'Swap weeks via mobile');
-      Alert.alert(
-        'Request sent',
-        'The other person will receive a notification to accept or decline.'
-      );
-      // keep UI selection; no immediate swap
+      Alert.alert('Request sent', 'The other person will be notified to accept or decline.');
     } catch (e: any) {
       Alert.alert('Could not propose swap', e?.message ?? 'Please try again.');
     }
@@ -210,38 +222,53 @@ export default function EventDetails({
 
   return (
     <View style={{ flex: 1, paddingHorizontal: 16, gap: 12 }}>
-      {/* Fixed base event */}
+      {/* Base event (fixed card) */}
       <View style={styles.card}>
-        <Text style={styles.title}>{selected.label}</Text>
-        <Text style={styles.sub}>
+        <Text style={styles.h1}>{selected.label}</Text>
+        <Text style={styles.cardSub}>
           {selected.account_name ?? 'Account'}
           {selected.team_name ? ` — ${selected.team_name}` : ''}
         </Text>
-        <Text style={styles.meta}>🗓️ {fmtTimeRange(selected.starts_at, selected.ends_at)}</Text>
+        <Text style={styles.metaLine}>{fmtTimeRange(selected.starts_at, selected.ends_at)}</Text>
 
         <View style={{ height: 8 }} />
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <Pressable onPress={cantMakeIt} style={styles.primaryBtn}>
-            <Text style={styles.primaryText}>Can’t make it</Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Pressable
+            onPress={cantMakeIt}
+            style={styles.subtleBtn}
+            android_ripple={{ color: '#e5e7eb' }}
+            accessibilityRole="button"
+            accessibilityLabel="Open replacement request"
+          >
+            <Text style={styles.subtleBtnText}>Can't make it</Text>
           </Pressable>
+
           <Pressable
             onPress={doProposeCrossDateSwap}
             disabled={!proposeEnabled}
-            style={[styles.secondaryBtn, !proposeEnabled && { opacity: 0.5 }]}
+            style={[styles.subtleBtn, !proposeEnabled && { opacity: 0.5 }]}
+            android_ripple={{ color: '#e5e7eb' }}
+            accessibilityRole="button"
+            accessibilityLabel={target ? 'Propose swap' : 'Select a date below to enable swap'}
           >
-            <Text style={styles.secondaryText}>
+            <Text style={styles.subtleBtnText}>
               {target ? 'Propose swap' : 'Select a date below'}
             </Text>
           </Pressable>
         </View>
       </View>
 
-      {/* Other dates in this series (soonest first; base excluded) */}
-      <Text style={styles.h2}>Other dates in this series</Text>
-      {loading ? (
-        <ActivityIndicator />
-      ) : (siblings ?? []).length === 0 ? (
-        <Text style={styles.muted}>No other upcoming dates.</Text>
+      {/* Section header */}
+      <View style={styles.sectionBar}>
+        <Text style={styles.sectionBarText}>Other dates in this series</Text>
+      </View>
+
+      {/* Flicker-free list:
+          - siblings === undefined  -> silently loading (show nothing)
+          - siblings loaded & length === 0 -> muted empty line
+          - siblings loaded & length > 0 -> list */}
+      {siblings === undefined ? null : (siblings ?? []).length === 0 ? (
+        <Text style={styles.meta}>No other upcoming dates.</Text>
       ) : (
         <FlatList
           data={siblings ?? []}
@@ -252,15 +279,25 @@ export default function EventDetails({
             return (
               <Pressable
                 onPress={() => setTargetId(item.event_id)}
-                style={[styles.row, active && { borderColor: '#10b981' }, mine && { opacity: 0.6 }]}
+                style={[
+                  styles.cardRow,
+                  { marginTop: 8 },
+                  active && { borderColor: '#10b981' },
+                  mine && { opacity: 0.6 },
+                ]}
+                android_ripple={{ color: '#e5e7eb' }}
+                accessibilityRole="button"
+                accessibilityLabel={`Select ${item.label}`}
               >
-                <Text style={styles.rowTitle}>{item.label}</Text>
-                <Text style={styles.rowMeta}>{fmtTimeRange(item.starts_at, item.ends_at)}</Text>
-                <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
-                  <Text style={styles.assigneeLine}>
-                    Assigned: {assigneeNameByEvent[item.event_id] ?? '—'}
-                  </Text>
-                  {mine ? <Text style={styles.badgeMine}>Mine</Text> : null}
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text style={styles.cardTitle}>{item.label}</Text>
+                  <Text style={styles.metaLine}>{fmtTimeRange(item.starts_at, item.ends_at)}</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Text style={styles.assigneeLine}>
+                      Assigned: {assigneeNameByEvent[item.event_id] ?? '—'}
+                    </Text>
+                    {mine ? <Text style={styles.badgeMine}>Mine</Text> : null}
+                  </View>
                 </View>
               </Pressable>
             );
@@ -271,7 +308,25 @@ export default function EventDetails({
   );
 }
 
+/* ---------- Styles aligned with MyRoster ---------- */
 const styles = StyleSheet.create({
+  // tokens (mirror MyRoster)
+  h1: { fontSize: 18, fontWeight: '700', color: '#111' },
+  meta: { fontSize: 13, color: '#6b7280' },
+  metaLine: { fontSize: 13, color: '#444' },
+
+  // section bar
+  sectionBar: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#ececec',
+  },
+  sectionBarText: { fontSize: 13, fontWeight: '800', color: '#111', letterSpacing: 0.2 },
+
+  // cards/rows (match MyRoster)
   card: {
     borderWidth: 1,
     borderColor: '#ececec',
@@ -284,39 +339,22 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
-  title: { fontSize: 20, fontWeight: '800', color: '#111' },
-  sub: { fontSize: 12, color: '#555', marginTop: 2 },
-  meta: { fontSize: 13, color: '#444', marginTop: 6 },
-  h2: { fontSize: 16, fontWeight: '800', marginTop: 8 },
-  row: {
+  cardRow: {
     borderWidth: 1,
-    borderColor: '#eee',
-    borderRadius: 12,
-    padding: 10,
+    borderColor: '#ececec',
+    borderRadius: 14,
+    padding: 12,
     backgroundColor: '#fff',
-    marginTop: 8,
-    gap: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
-  rowTitle: { fontSize: 14, fontWeight: '700', color: '#111' },
-  rowMeta: { fontSize: 12, color: '#555' },
+  cardTitle: { fontSize: 16, fontWeight: '700', color: '#111' },
+  cardSub: { fontSize: 12, color: '#555', marginTop: 2 },
+
   assigneeLine: { fontSize: 12, color: '#333' },
-  muted: { color: '#666' },
-  primaryBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  primaryText: { color: '#fff', fontWeight: '800' },
-  secondaryBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#eef1f5',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  secondaryText: { color: '#111', fontWeight: '800' },
   badgeMine: {
     fontSize: 11,
     color: '#0a3',
@@ -325,4 +363,16 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 6,
   },
+
+  // subtle buttons (reuse Clear style vibes)
+  subtleBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#eef1f5',
+    borderWidth: 1,
+    borderColor: '#ececec',
+    alignSelf: 'flex-start',
+  },
+  subtleBtnText: { fontSize: 12, fontWeight: '800', color: '#111' },
 });
