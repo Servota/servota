@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "32f775aa-c53f-43e1-8a77-eadf2b2e7793"
+      }
+    },
+    "android": {
+      "package": "com.mattypumba.servota"
+    }
+  }
+}

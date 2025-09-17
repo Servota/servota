@@ -1,0 +1,16 @@
+# Ignore all node_modules everywhere
+**/node_modules
+node_modules
+
+# Ignore pnpm store and symlinks
+.pnpm
+**/.pnpm
+
+# Build outputs
+dist
+build
+.expo
+
+# Logs
+npm-debug.log
+yarn-error.log

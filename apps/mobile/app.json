@@ -31,7 +31,8 @@
         "googleMaps": {
           "apiKey": "AIzaSyAb5IFkMfusSmwDijjsePnH-W7-AV8t2aU"
         }
-      }
+      },
+      "package": "com.mattypumba.servota"
     },
     "web": {
       "favicon": "./assets/favicon.png"
