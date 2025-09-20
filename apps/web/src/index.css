@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Servota overrides */
+html,
+body,
+#root {
+  height: 100%;
+  background-color: theme('colors.surface.DEFAULT');
+  color: theme('colors.text.DEFAULT');
+  font-family: theme('fontFamily.sans');
+}
