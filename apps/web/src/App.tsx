@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getBrowserSupabaseClient, setContext, clearContext } from '@servota/shared';
 import TeamRequirements from './TeamRequirements';
-import TeamSchedule from './TeamSchedule';
+import TeamSchedule from './console/team/TeamSchedule';
 import TeamSettings from './TeamSettings';
 import TeamApprovals from './TeamApprovals';
 import TeamMembers from './TeamMembers';
