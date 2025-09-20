@@ -7,6 +7,7 @@ import TeamApprovals from './console/team/TeamApprovals';
 import TeamMembers from './console/team/TeamMembers';
 import AccountConsole from './console/account/AccountConsole';
 import MyRoster from './member/MyRoster';
+import MyUnavailability from './member/MyUnavailability';
 
 /* ------------ Types ------------ */
 
@@ -463,8 +464,7 @@ export default function App() {
 
         {view === 'unavailability' && (
           <section>
-            <h1>Unavailability</h1>
-            <p>Personal unavailability editor (to be built, similar to mobile).</p>
+            <MyUnavailability />
           </section>
         )}
 
