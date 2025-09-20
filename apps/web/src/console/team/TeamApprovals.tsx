@@ -63,37 +63,34 @@ export default function TeamApprovals() {
   }, [accountId, teamId]);
 
   const approve = async (row: SwapRow) => {
-  try {
-    const { error } = await (supabase as any).rpc('approve_swap_request', {
-      p_swap_request_id: row.id,
-    });
-    if (error) throw error;
-    setItems((prev) => prev.filter((r) => r.id !== row.id));
-  } catch (e: any) {
-    alert(e?.message ?? 'Could not approve');
-  }
-};
-
-
+    try {
+      const { error } = await (supabase as any).rpc('approve_swap_request', {
+        p_swap_request_id: row.id,
+      });
+      if (error) throw error;
+      setItems((prev) => prev.filter((r) => r.id !== row.id));
+    } catch (e: any) {
+      alert(e?.message ?? 'Could not approve');
+    }
+  };
 
   const decline = async (row: SwapRow) => {
-  try {
-    const isCrossDate = !!row.from_assignment_id && !!row.to_assignment_id;
+    try {
+      const isCrossDate = !!row.from_assignment_id && !!row.to_assignment_id;
 
-    const { error } = await (supabase as any).rpc(
-      isCrossDate ? 'respond_cross_date_swap' : 'respond_swap',
-      isCrossDate
-        ? { p_swap_request_id: row.id, p_action: 'decline' }    // cross-date params
-        : { swap_request_id: row.id, action: 'decline' }        // same-event params
-    );
-    if (error) throw error;
+      const { error } = await (supabase as any).rpc(
+        isCrossDate ? 'respond_cross_date_swap' : 'respond_swap',
+        isCrossDate
+          ? { p_swap_request_id: row.id, p_action: 'decline' } // cross-date params
+          : { swap_request_id: row.id, action: 'decline' } // same-event params
+      );
+      if (error) throw error;
 
-    setItems((prev) => prev.filter((r) => r.id !== row.id));
-  } catch (e: any) {
-    alert(e?.message ?? 'Could not decline');
-  }
-};
-
+      setItems((prev) => prev.filter((r) => r.id !== row.id));
+    } catch (e: any) {
+      alert(e?.message ?? 'Could not decline');
+    }
+  };
 
   const fmt = (iso?: string | null) => {
     if (!iso) return '—';

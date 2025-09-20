@@ -97,10 +97,11 @@ export default function AccountMembers({ accountId }: AccountMembersProps) {
       setMembers(rows);
 
       // Find my role
-const me = (await supabase.auth.getUser()).data?.user?.id ?? '';
-const mine = rows.find((m: { user_id: string; role: AccountRole | null }) => m.user_id === me);
-setMyRole(mine?.role ?? null);
-
+      const me = (await supabase.auth.getUser()).data?.user?.id ?? '';
+      const mine = rows.find(
+        (m: { user_id: string; role: AccountRole | null }) => m.user_id === me
+      );
+      setMyRole(mine?.role ?? null);
     } catch (e: any) {
       setErr(e?.message ?? 'Failed to load members');
     } finally {
@@ -160,7 +161,14 @@ setMyRole(mine?.role ?? null);
         {/* Invite (Viewer only) */}
         <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
           <div style={{ fontWeight: 700 }}>Invite member</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr auto',
+              gap: 8,
+              alignItems: 'center',
+            }}
+          >
             <input
               placeholder="Email (existing user)"
               value={inviteEmail}
@@ -172,7 +180,8 @@ setMyRole(mine?.role ?? null);
             </button>
           </div>
           <div style={{ opacity: 0.7, fontSize: 12 }}>
-            Invites are created as <strong>Viewer</strong>. Role changes can be made below (Owner only). Owner cannot be changed.
+            Invites are created as <strong>Viewer</strong>. Role changes can be made below (Owner
+            only). Owner cannot be changed.
           </div>
         </div>
 
@@ -204,7 +213,9 @@ setMyRole(mine?.role ?? null);
                       ) : (
                         <select
                           value={m.role ?? 'viewer'}
-                          onChange={(e) => changeRole(m.user_id, e.currentTarget.value as AccountRole)}
+                          onChange={(e) =>
+                            changeRole(m.user_id, e.currentTarget.value as AccountRole)
+                          }
                           style={selectStyle}
                           disabled={!canEdit}
                           title={!canEdit ? 'Owner only' : undefined}

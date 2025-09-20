@@ -1,7 +1,7 @@
 // apps/web/src/AccountConsole.tsx
 import React, { useState } from 'react';
 import { getContext } from '@servota/shared';
-import AccountMembers from './AccountMembers';
+import AccountMembers from '../../AccountMembers';
 
 /**
  * Manage Account console:
@@ -82,9 +82,7 @@ function AccountTeams() {
         <strong>Teams</strong>
       </div>
       <div style={{ padding: 10 }}>
-        <p style={{ opacity: 0.8 }}>
-          Team management UI to be built here (create/delete teams).
-        </p>
+        <p style={{ opacity: 0.8 }}>Team management UI to be built here (create/delete teams).</p>
       </div>
     </div>
   );

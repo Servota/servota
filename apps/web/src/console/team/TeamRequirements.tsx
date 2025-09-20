@@ -70,14 +70,12 @@ export default function TeamRequirements() {
     if (!name) return;
     try {
       // Small TS shim with `as any` because generated row types may not be flowing:
-      await supabase.from('requirements').insert(
-        {
-          account_id: accountId,
-          team_id: teamId,
-          name,
-          active: true,
-        } as any
-      );
+      await supabase.from('requirements').insert({
+        account_id: accountId,
+        team_id: teamId,
+        name,
+        active: true,
+      } as any);
       setNewName('');
       await refresh();
     } catch (e: any) {
@@ -89,7 +87,10 @@ export default function TeamRequirements() {
     const name = editingName.trim();
     if (!name) return;
     try {
-      await supabase.from('requirements').update({ name } as any).eq('id', id);
+      await supabase
+        .from('requirements')
+        .update({ name } as any)
+        .eq('id', id);
       setEditingId(null);
       setEditingName('');
       await refresh();
@@ -100,7 +101,10 @@ export default function TeamRequirements() {
 
   const onToggle = async (id: string, next: boolean) => {
     try {
-      await supabase.from('requirements').update({ active: next } as any).eq('id', id);
+      await supabase
+        .from('requirements')
+        .update({ active: next } as any)
+        .eq('id', id);
       setItems((prev) => prev.map((r) => (r.id === id ? { ...r, active: next } : r)));
     } catch (e: any) {
       alert(e?.message ?? 'Could not update');

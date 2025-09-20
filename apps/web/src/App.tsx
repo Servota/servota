@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getBrowserSupabaseClient, setContext, clearContext } from '@servota/shared';
-import TeamRequirements from './TeamRequirements';
+import TeamRequirements from './console/team/TeamRequirements';
 import TeamSchedule from './console/team/TeamSchedule';
-import TeamSettings from './TeamSettings';
-import TeamApprovals from './TeamApprovals';
-import TeamMembers from './TeamMembers';
-import AccountConsole from './AccountConsole';
+import TeamSettings from './console/team/TeamSettings';
+import TeamApprovals from './console/team/TeamApprovals';
+import TeamMembers from './console/team/TeamMembers';
+import AccountConsole from './console/account/AccountConsole';
 
 /* ------------ Types ------------ */
 
