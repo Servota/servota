@@ -1,7 +1,7 @@
 // apps/web/src/AccountConsole.tsx
 import React, { useState } from 'react';
 import { getContext } from '@servota/shared';
-import AccountMembers from '../../AccountMembers';
+import AccountMembers from './AccountMembers';
 
 /**
  * Manage Account console:
