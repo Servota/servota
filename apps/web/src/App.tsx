@@ -6,6 +6,7 @@ import TeamSettings from './console/team/TeamSettings';
 import TeamApprovals from './console/team/TeamApprovals';
 import TeamMembers from './console/team/TeamMembers';
 import AccountConsole from './console/account/AccountConsole';
+import MyRoster from './member/MyRoster';
 
 /* ------------ Types ------------ */
 
@@ -470,7 +471,8 @@ export default function App() {
         {view === 'roster' && (
           <section>
             <h1>My Roster</h1>
-            <p>Your upcoming assignments list/calendar (to be built).</p>
+            {/* Render the member-facing roster page */}
+            <MyRoster />
           </section>
         )}
 
