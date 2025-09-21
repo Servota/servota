@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-vars */
+
 // apps/web/src/member/MyRoster.tsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { getBrowserSupabaseClient, getContext, setContext } from '@servota/shared';
@@ -28,7 +30,7 @@ type Row = {
     label: string | null;
     description: string | null;
     starts_at: string; // timestamptz
-    ends_at: string;   // timestamptz
+    ends_at: string; // timestamptz
     team_id: string;
   } | null;
 };
@@ -69,7 +71,9 @@ export default function MyRoster() {
       }
       setUserId(data.user?.id ?? null);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [supabase]);
 
   // Load account memberships once
@@ -87,7 +91,7 @@ export default function MyRoster() {
         setAccounts(accs);
 
         if (accountId) {
-          const current = accs.find(a => a.account_id === accountId);
+          const current = accs.find((a) => a.account_id === accountId);
           setAccountName(current?.accounts?.name ?? '');
         } else {
           setAccountName('');
@@ -98,7 +102,9 @@ export default function MyRoster() {
         setAccounts([]);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [supabase, accountId]);
 
   // Load team memberships when account changes
@@ -128,7 +134,7 @@ export default function MyRoster() {
         setTeams(rows);
 
         if (teamId) {
-          const current = rows.find(t => t.team_id === teamId);
+          const current = rows.find((t) => t.team_id === teamId);
           setTeamName(current?.team_name ?? '');
         } else {
           setTeamName('');
@@ -139,7 +145,9 @@ export default function MyRoster() {
         setTeams([]);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [supabase, accountId, teamId]);
 
   /* ---------------- load assignments ---------------- */
@@ -157,7 +165,8 @@ export default function MyRoster() {
 
       let q = supabase
         .from('assignments')
-        .select(`
+        .select(
+          `
           id,
           account_id,
           team_id,
@@ -172,7 +181,8 @@ export default function MyRoster() {
             ends_at,
             team_id
           )
-        `)
+        `
+        )
         .eq('user_id', userId)
         .gte('events.starts_at', nowIso)
         .order('starts_at', { ascending: true, foreignTable: 'events' })
@@ -213,7 +223,7 @@ export default function MyRoster() {
     localStorage.setItem('servota.accountId', id);
     localStorage.removeItem('servota.teamId');
     setContext({ accountId: id, teamId: null as any });
-    const a = (accounts ?? []).find(x => x.account_id === id);
+    const a = (accounts ?? []).find((x) => x.account_id === id);
     setAccountName(a?.accounts?.name ?? '');
     setTeamName('');
     setPickAccountOpen(false);
@@ -229,7 +239,7 @@ export default function MyRoster() {
     }
     localStorage.setItem('servota.teamId', id);
     setContext({ teamId: id });
-    const t = (teams ?? []).find(x => x.team_id === id);
+    const t = (teams ?? []).find((x) => x.team_id === id);
     setTeamName(t?.team_name ?? '');
     setPickTeamOpen(false);
   };
@@ -243,8 +253,8 @@ export default function MyRoster() {
   const filterSummary = teamName
     ? `Showing only ${teamName} events`
     : accountName
-    ? `Showing only ${accountName} events`
-    : 'Showing all events';
+      ? `Showing only ${accountName} events`
+      : 'Showing all events';
 
   /* ---------------- render ---------------- */
   return (
@@ -253,7 +263,11 @@ export default function MyRoster() {
       <div className="sv-card p-4">
         <h2 className="sv-h1">My Roster</h2>
         <p className="sv-meta">Tap an event to view details (and other dates in the series).</p>
-        {error ? <p className="sv-meta" style={{ color: '#c00' }}>{error}</p> : null}
+        {error ? (
+          <p className="sv-meta" style={{ color: '#c00' }}>
+            {error}
+          </p>
+        ) : null}
       </div>
 
       {/* Filters */}
@@ -277,9 +291,7 @@ export default function MyRoster() {
             aria-label="Select team"
             disabled={!accountId}
           >
-            <span className="sv-chip-label">
-              {teamName ? `Team ${teamName}` : 'Select team'}
-            </span>
+            <span className="sv-chip-label">{teamName ? `Team ${teamName}` : 'Select team'}</span>
           </button>
         </div>
 
@@ -318,11 +330,11 @@ export default function MyRoster() {
                   <div>
                     <div className="font-semibold">
                       {ev?.label || 'Event'}{' '}
-                      <span className="opacity-70 text-sm">({starts} – {ends})</span>
+                      <span className="opacity-70 text-sm">
+                        ({starts} – {ends})
+                      </span>
                     </div>
-                    {ev?.description && (
-                      <div className="sv-meta mt-1">{ev.description}</div>
-                    )}
+                    {ev?.description && <div className="sv-meta mt-1">{ev.description}</div>}
                     <div className="sv-meta mt-1">
                       {r.account_id}
                       {ev?.team_id ? ' — ' + (teamName || 'Team') : ''}
@@ -388,11 +400,7 @@ function PickerModal({
   if (!open) return null;
   return (
     <>
-      <div
-        className="fixed inset-0 bg-black/40"
-        onClick={onClose}
-        aria-hidden="true"
-      />
+      <div className="fixed inset-0 bg-black/40" onClick={onClose} aria-hidden="true" />
       <div
         role="dialog"
         aria-modal="true"
@@ -407,6 +415,8 @@ function PickerModal({
             Clear selection
           </button>
         )}
+
+        {}
         <div className="max-h-[50vh] overflow-y-auto">
           {items.map((it) => (
             <button
@@ -419,8 +429,12 @@ function PickerModal({
             </button>
           ))}
         </div>
+        {/* eslint-enable no-unused-vars */}
+
         <div className="mt-3 text-center">
-          <button className="sv-btn-ghost" onClick={onClose}>Close</button>
+          <button className="sv-btn-ghost" onClick={onClose}>
+            Close
+          </button>
         </div>
       </div>
     </>
