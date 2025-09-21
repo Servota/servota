@@ -1,11 +1,14 @@
+/* apps/web/src/App.tsx */
 import React, { useEffect, useMemo, useState } from 'react';
 import { getBrowserSupabaseClient, setContext, clearContext } from '@servota/shared';
+
 import TeamRequirements from './console/team/TeamRequirements';
 import TeamSchedule from './console/team/TeamSchedule';
 import TeamSettings from './console/team/TeamSettings';
 import TeamApprovals from './console/team/TeamApprovals';
 import TeamMembers from './console/team/TeamMembers';
 import AccountConsole from './console/account/AccountConsole';
+
 import MyRoster from './member/MyRoster';
 import MyUnavailability from './member/MyUnavailability';
 
@@ -256,7 +259,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div style={wrap}>
+      <div className="p-6 font-sans max-w-[960px] mx-auto">
         <p>Loading…</p>
       </div>
     );
@@ -264,25 +267,25 @@ export default function App() {
 
   if (!session?.user) {
     return (
-      <div style={centerWrap}>
-        <div style={card}>
-          <h1 style={{ marginTop: 0 }}>Servota Web</h1>
-          <p style={{ opacity: 0.8 }}>Sign in to continue.</p>
-          <div style={{ display: 'grid', gap: 8 }}>
+      <div className="grid place-items-center min-h-screen font-sans">
+        <div className="w-[360px] p-5 border border-[#e5e7eb] rounded-[12px] shadow">
+          <h1 className="mt-0 text-[#111] font-bold text-[20px]">Servota Web</h1>
+          <p className="opacity-80">Sign in to continue.</p>
+          <div className="grid gap-2">
             <input
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.currentTarget.value)}
-              style={input}
+              className="p-2.5 rounded-[10px] border border-[#ddd] text-[14px]"
             />
             <input
               type="password"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.currentTarget.value)}
-              style={input}
+              className="p-2.5 rounded-[10px] border border-[#ddd] text-[14px]"
             />
-            <button onClick={signIn} style={btnPrimary}>
+            <button onClick={signIn} className="py-2 px-3 rounded-[10px] bg-[#2563eb] border border-[#2563eb] text-white font-bold">
               Sign in
             </button>
           </div>
@@ -294,195 +297,213 @@ export default function App() {
   const me = session.user.email ?? session.user.id;
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', fontFamily }}>
-      {/* Sidebar */}
-      <aside style={side}>
-        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>Servota</div>
+    <div className="min-h-screen font-sans">
+      {/* Header */}
+<header className="sv-header">
+  <div className="sv-header-inner">
+    {/* Left: Logo + brand */}
+    <div className="flex items-center gap-3">
+  <img src="/servota-logo.png" alt="Servota" className="sv-logo"
+       onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+</div>
 
-        <NavItem label="Home" active={view === 'home'} onClick={() => setView('home')} />
-        <NavItem
-          label="Memberships"
-          active={view === 'memberships'}
-          onClick={() => setView('memberships')}
-        />
-        <NavItem
-          label="Unavailability"
-          active={view === 'unavailability'}
-          onClick={() => setView('unavailability')}
-        />
-        <NavItem label="Roster" active={view === 'roster'} onClick={() => setView('roster')} />
-        <NavItem
-          label="Settings"
-          active={view === 'settings'}
-          onClick={() => setView('settings')}
-        />
+    {/* Right: quick actions */}
+    <div className="flex items-center gap-2">
+      <button className="sv-icon-btn" title="Notifications" aria-label="Notifications">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7"/>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+      </button>
+      <button className="sv-icon-btn-ghost" title="Profile" aria-label="Profile">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 21a8 8 0 0 0-16 0"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
 
-        <div style={{ flex: 1 }} />
-        <div style={{ fontSize: 12, opacity: 0.7, marginTop: 12 }}>{me}</div>
-        <button style={btnGhost} onClick={signOut}>
-          Sign out
-        </button>
-      </aside>
 
-      {/* Main */}
-      <main style={main}>
-        {view === 'home' && (
-          <section>
-            <h1>Home</h1>
-            <p>Welcome. This will become a “My Roster” summary.</p>
-          </section>
-        )}
+      {/* Body: sidebar + main */}
+      <div className="flex min-h-[calc(100vh-56px)]">
+        {/* Sidebar */}
+        <aside className="sv-side">
+          <div className="sv-side-title">Servota</div>
 
-        {view === 'memberships' && (
-          <section>
-            <h1>Memberships</h1>
-            <p style={{ opacity: 0.8 }}>
-              Pick an account to work in. Admins see “Manage Account”. Schedulers see “Manage Team”.
-            </p>
+          <NavItem label="Home" active={view === 'home'} onClick={() => setView('home')} />
+          <NavItem label="Memberships" active={view === 'memberships'} onClick={() => setView('memberships')} />
+          <NavItem label="Unavailability" active={view === 'unavailability'} onClick={() => setView('unavailability')} />
+          <NavItem label="My Roster" active={view === 'roster'} onClick={() => setView('roster')} />
+          <NavItem label="Settings" active={view === 'settings'} onClick={() => setView('settings')} />
 
-            <h2 style={{ marginTop: 16 }}>Accounts</h2>
-            {accounts.length === 0 ? (
-              <p>No accounts found.</p>
-            ) : (
-              <div style={grid}>
-                {accounts.map((a) => {
-                  const isAdmin = a.role === 'owner' || a.role === 'admin';
-                  const active = a.account_id === accountId;
-                  return (
-                    <div key={a.account_id} style={tile(active)}>
-                      <div style={{ fontWeight: 700 }}>{a.accounts?.name ?? a.account_id}</div>
-                      <div style={{ fontSize: 12, opacity: 0.7 }}>
-                        Role: {a.role ?? 'member'} | Status: {a.status ?? 'active'}
-                      </div>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                        <button style={btnPrimary} onClick={() => openAccount(a.account_id)}>
-                          Open
-                        </button>
-                        {isAdmin && (
-                          <button style={btnSecondary} onClick={() => manageAccount(a.account_id)}>
-                            Manage Account
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+          <div className="flex-1" />
+          <div className="text-[12px] opacity-70 mt-3">{me}</div>
+          <button className="sv-btn-ghost" onClick={signOut}>Sign out</button>
+        </aside>
+
+        {/* Main */}
+        <main className="sv-main">
+          {view === 'home' && (
+            <section className="sv-page">
+              <div className="sv-card p-4">
+                <h1 className="sv-h1">Home</h1>
+                <p className="sv-meta">This will become a “My Roster” summary.</p>
               </div>
-            )}
+            </section>
+          )}
 
-            {accountId && (
-              <>
-                <h2 style={{ marginTop: 20 }}>
-                  Teams in <span style={{ fontWeight: 700 }}>{accountLabel || accountId}</span>
-                </h2>
-                {teams.length === 0 ? (
-                  <p>No teams yet.</p>
-                ) : (
-                  <div style={grid}>
-                    {teams.map((t) => {
-                      const role = teamRolesById[t.id] ?? null;
-                      const isScheduler =
-                        role === 'scheduler' ||
-                        accounts.find(
-                          (a) =>
-                            a.account_id === accountId && (a.role === 'owner' || a.role === 'admin')
-                        );
-                      const active = t.id === teamId;
-                      return (
-                        <div key={t.id} style={tile(active)}>
-                          <div style={{ fontWeight: 700 }}>{t.name ?? t.id}</div>
-                          <div style={{ fontSize: 12, opacity: 0.7 }}>
-                            {role ? `Your role: ${role}` : 'Member'}
-                          </div>
-                          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                            <button style={btnPrimary} onClick={() => openTeam(t.id)}>
-                              Open Team
-                            </button>
-                            {isScheduler && (
-                              <button style={btnSecondary} onClick={() => manageTeam(t.id)}>
-                                Manage Team
-                              </button>
-                            )}
-                          </div>
+          {view === 'memberships' && (
+            <section className="sv-page">
+              <div className="sv-card p-4">
+                <h1 className="sv-h1">Memberships</h1>
+                <p className="sv-meta">
+                  Pick an account to work in. Admins see “Manage Account”. Schedulers see “Manage Team”.
+                </p>
+              </div>
+
+              <h2 className="sv-section mt-5">Accounts</h2>
+              {accounts.length === 0 ? (
+                <p className="sv-meta">No accounts found.</p>
+              ) : (
+                <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+                  {accounts.map((a) => {
+                    const isAdmin = a.role === 'owner' || a.role === 'admin';
+                    const active = a.account_id === accountId;
+                    return (
+                      <div key={a.account_id} className="sv-card p-3" style={{ background: active ? '#f8fafc' : '#fff' }}>
+                        <div className="font-bold">{a.accounts?.name ?? a.account_id}</div>
+                        <div className="text-[12px] opacity-70">
+                          Role: {a.role ?? 'member'} | Status: {a.status ?? 'active'}
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
-            )}
-          </section>
-        )}
-
-        {view === 'account-manage' && (
-          <section>
-            <h1>Account Console</h1>
-            <p>
-              Managing account: <strong>{accountLabel || accountId || '(none selected)'}</strong>
-            </p>
-            {/* Render the full Manage Account console */}
-            <AccountConsole />
-          </section>
-        )}
-
-        {view === 'team-manage' && (
-          <section>
-            <header style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <h1 style={{ marginBottom: 0 }}>Team Console</h1>
-            </header>
-            <p style={{ marginTop: 6 }}>
-              Team: <strong>{teamLabel || teamId || '(none selected)'}</strong> in{' '}
-              <em>{accountLabel || accountId || '(no account)'}</em>
-            </p>
-
-            <TeamTabs
-              value={teamTab}
-              onChange={setTeamTab}
-              approvalsEnabled={allowSwaps && requireApproval}
-            />
-
-            <div style={{ marginTop: 16 }}>
-              {teamTab === 'members' && <TeamMembers />}
-
-              {teamTab === 'requirements' && <TeamRequirements />}
-
-              {teamTab === 'schedule' && <TeamSchedule />}
-
-              {teamTab === 'approvals' && allowSwaps && requireApproval && <TeamApprovals />}
-
-              {teamTab === 'settings' && (
-                <TeamSettings
-                  onPolicyChange={(p: { allowSwaps: boolean; requireApproval: boolean }) => {
-                    setAllowSwaps(!!p.allowSwaps);
-                    setRequireApproval(!!p.requireApproval);
-                  }}
-                />
+                        <div className="flex gap-2 mt-2">
+                          <button className="py-2 px-3 rounded-[10px] bg-[#2563eb] border border-[#2563eb] text-white font-bold" onClick={() => openAccount(a.account_id)}>
+                            Open
+                          </button>
+                          {isAdmin && (
+                            <button className="py-2 px-3 rounded-[10px] bg-white border border-[#e5e7eb] font-bold" onClick={() => manageAccount(a.account_id)}>
+                              Manage Account
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
-            </div>
-          </section>
-        )}
 
-        {view === 'unavailability' && (
-          <section>
-            <MyUnavailability />
-          </section>
-        )}
+              {accountId && (
+                <>
+                  <h2 className="sv-section mt-5">
+                    Teams in <span className="font-bold">{accountLabel || accountId}</span>
+                  </h2>
+                  {teams.length === 0 ? (
+                    <p className="sv-meta">No teams yet.</p>
+                  ) : (
+                    <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+                      {teams.map((t) => {
+                        const role = teamRolesById[t.id] ?? null;
+                        const isScheduler =
+                          role === 'scheduler' ||
+                          accounts.find(
+                            (a) =>
+                              a.account_id === accountId && (a.role === 'owner' || a.role === 'admin')
+                          );
+                        const active = t.id === teamId;
+                        return (
+                          <div key={t.id} className="sv-card p-3" style={{ background: active ? '#f8fafc' : '#fff' }}>
+                            <div className="font-bold">{t.name ?? t.id}</div>
+                            <div className="text-[12px] opacity-70">
+                              {role ? `Your role: ${role}` : 'Member'}
+                            </div>
+                            <div className="flex gap-2 mt-2">
+                              <button className="py-2 px-3 rounded-[10px] bg-[#2563eb] border border-[#2563eb] text-white font-bold" onClick={() => openTeam(t.id)}>
+                                Open Team
+                              </button>
+                              {isScheduler && (
+                                <button className="py-2 px-3 rounded-[10px] bg-white border border-[#e5e7eb] font-bold" onClick={() => manageTeam(t.id)}>
+                                  Manage Team
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+          )}
 
-        {view === 'roster' && (
-          <section>
-            <h1>My Roster</h1>
-            {/* Render the member-facing roster page */}
-            <MyRoster />
-          </section>
-        )}
+          {view === 'account-manage' && (
+            <section className="sv-page">
+              <div className="sv-card p-4">
+                <h1 className="sv-h1">Account Console</h1>
+                <p className="sv-meta">
+                  Managing account: <strong>{accountLabel || accountId || '(none selected)'}</strong>
+                </p>
+              </div>
+              <div className="mt-4">
+                <AccountConsole />
+              </div>
+            </section>
+          )}
 
-        {view === 'settings' && (
-          <section>
-            <h1>Settings</h1>
-            <p>Profile and preferences (to be built).</p>
-          </section>
-        )}
-      </main>
+          {view === 'team-manage' && (
+            <section className="sv-page">
+              <div className="sv-card p-4">
+                <h1 className="sv-h1">Team Console</h1>
+                <p className="sv-meta">
+                  Team: <strong>{teamLabel || teamId || '(none selected)'}</strong> in{' '}
+                  <em>{accountLabel || accountId || '(no account)'}</em>
+                </p>
+              </div>
+
+              <div className="sv-section-bar mt-4"><div className="sv-section-bar-text">Team Tabs</div></div>
+              <TeamTabs value={teamTab} onChange={setTeamTab} approvalsEnabled={allowSwaps && requireApproval} />
+
+              <div className="mt-4">
+                {teamTab === 'members' && <TeamMembers />}
+                {teamTab === 'requirements' && <TeamRequirements />}
+                {teamTab === 'schedule' && <TeamSchedule />}
+                {teamTab === 'approvals' && allowSwaps && requireApproval && <TeamApprovals />}
+                {teamTab === 'settings' && (
+                  <TeamSettings
+                    onPolicyChange={(p: { allowSwaps: boolean; requireApproval: boolean }) => {
+                      setAllowSwaps(!!p.allowSwaps);
+                      setRequireApproval(!!p.requireApproval);
+                    }}
+                  />
+                )}
+              </div>
+            </section>
+          )}
+
+          {view === 'unavailability' && (
+            <section className="sv-page">
+              <MyUnavailability />
+            </section>
+          )}
+
+          {view === 'roster' && (
+            <section className="sv-page">
+              <h1 className="sv-h1">My Roster</h1>
+              <MyRoster />
+            </section>
+          )}
+
+          {view === 'settings' && (
+            <section className="sv-page">
+              <div className="sv-card p-4">
+                <h1 className="sv-h1">Settings</h1>
+                <p className="sv-meta">Profile and preferences (to be built).</p>
+              </div>
+            </section>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
@@ -501,12 +522,7 @@ function NavItem({
   return (
     <button
       onClick={onClick}
-      style={{
-        ...navItem,
-        background: active ? '#eef2ff' : 'transparent',
-        borderColor: active ? '#e5e7eb' : 'transparent',
-        fontWeight: active ? 700 : 600,
-      }}
+      className={`sv-nav-item ${active ? 'sv-nav-item-active' : 'sv-nav-item-hover'}`}
     >
       {label}
     </button>
@@ -531,17 +547,16 @@ function TeamTabs({
   ];
 
   return (
-    <div style={tabsWrap}>
+    <div className="flex gap-1 border-b border-[#e5e7eb]">
       {tabs
         .filter((t) => t.show)
         .map((t) => (
           <button
             key={t.key}
             onClick={() => onChange(t.key)}
-            style={{
-              ...tabBtn,
-              ...(value === t.key ? tabBtnActive : {}),
-            }}
+            className={`py-2 px-3 rounded-t-[10px] border border-transparent font-bold ${
+              value === t.key ? 'bg-white border-[#e5e7eb] border-b-white' : ''
+            }`}
           >
             {t.label}
           </button>
@@ -549,124 +564,3 @@ function TeamTabs({
     </div>
   );
 }
-
-/* ------------ styles ------------ */
-
-const fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-
-const side: React.CSSProperties = {
-  width: 220,
-  padding: 16,
-  borderRight: '1px solid #e5e7eb',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 6,
-};
-
-const main: React.CSSProperties = {
-  flex: 1,
-  padding: 20,
-};
-
-const navItem: React.CSSProperties = {
-  textAlign: 'left',
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '1px solid transparent',
-  cursor: 'pointer',
-  fontWeight: 600,
-};
-
-const wrap: React.CSSProperties = {
-  padding: 24,
-  fontFamily,
-  maxWidth: 960,
-  margin: '0 auto',
-};
-
-const centerWrap: React.CSSProperties = {
-  display: 'grid',
-  placeItems: 'center',
-  minHeight: '100vh',
-  fontFamily,
-};
-
-const card: React.CSSProperties = {
-  width: 360,
-  padding: 20,
-  border: '1px solid #e5e7eb',
-  borderRadius: 12,
-  boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-};
-
-const input: React.CSSProperties = {
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '1px solid #ddd',
-  fontSize: 14,
-  boxSizing: 'border-box',
-};
-
-const btnPrimary: React.CSSProperties = {
-  padding: '8px 12px',
-  borderRadius: 10,
-  border: '1px solid #2563eb',
-  background: '#2563eb',
-  color: '#fff',
-  fontWeight: 700,
-  cursor: 'pointer',
-};
-
-const btnSecondary: React.CSSProperties = {
-  padding: '8px 12px',
-  borderRadius: 10,
-  border: '1px solid #e5e7eb',
-  background: '#fff',
-  color: '#111',
-  fontWeight: 700,
-  cursor: 'pointer',
-};
-
-const btnGhost: React.CSSProperties = {
-  padding: '6px 10px',
-  borderRadius: 10,
-  border: '1px solid #e5e7eb',
-  background: '#fff',
-  color: '#111',
-  cursor: 'pointer',
-};
-
-const grid: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-  gap: 12,
-  marginTop: 8,
-};
-
-const tile = (active: boolean): React.CSSProperties => ({
-  padding: 12,
-  border: '1px solid #e5e7eb',
-  borderRadius: 12,
-  background: active ? '#f8fafc' : '#fff',
-});
-
-const tabsWrap: React.CSSProperties = {
-  display: 'flex',
-  gap: 6,
-  borderBottom: '1px solid #e5e7eb',
-};
-
-const tabBtn: React.CSSProperties = {
-  padding: '8px 12px',
-  borderRadius: '10px 10px 0 0',
-  border: '1px solid transparent',
-  background: 'transparent',
-  cursor: 'pointer',
-  fontWeight: 700,
-};
-
-const tabBtnActive: React.CSSProperties = {
-  background: '#fff',
-  borderColor: '#e5e7eb',
-  borderBottomColor: '#fff',
-};

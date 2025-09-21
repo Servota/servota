@@ -1,13 +1,78 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-/* Servota overrides */
-html,
-body,
-#root {
+/* --------- Servota base (no theme() calls) --------- */
+html, body, #root {
   height: 100%;
-  background-color: theme('colors.surface.DEFAULT');
-  color: theme('colors.text.DEFAULT');
-  font-family: theme('fontFamily.sans');
+  background-color: #f9fafb; /* Tailwind's gray-50 */
+  color: #111;               /* solid dark text */
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
+
+
+/* ------- Servota UI utilities (mobile-aligned) ------- */
+/* ------- Servota UI utilities (Tailwind v4) ------- */
+
+/* Cards */
+@utility sv-card {
+  @apply bg-white border border-[#e6e7ea] rounded-[14px] shadow;
+}
+@utility sv-card-row {
+  @apply flex items-center gap-3 p-3 bg-white border border-[#e6e7ea] rounded-[14px] shadow;
+}
+
+/* Headings + text */
+@utility sv-h1 { @apply text-[#111] font-bold text-[20px]; }
+@utility sv-meta { @apply text-[13px] text-[#6b7280]; }
+@utility sv-section { @apply text-[#111] font-extrabold text-sm mt-1 mb-1; }
+@utility sv-meta-line { @apply text-[13px] text-[#444]; }
+
+/* Section bar */
+@utility sv-section-bar { @apply bg-[#f3f4f6] rounded-[10px] border border-[#e6e7ea] py-1.5 px-2.5; }
+@utility sv-section-bar-text { @apply text-[13px] font-extrabold text-[#111] tracking-[0.02em]; }
+
+/* Chips */
+@utility sv-chip { @apply bg-white border border-[#d1d5db] rounded-[12px] py-2 px-3; }
+@utility sv-chip-active { @apply bg-[#eef1f5] border-[#cbd5e1]; }
+@utility sv-chip-label { @apply text-base font-extrabold text-[#111]; }
+
+/* Icon buttons */
+@utility sv-icon-btn {
+  @apply inline-flex items-center justify-center w-9 h-9 rounded-xl border border-[#e6e7ea] bg-white cursor-pointer;
+}
+@utility sv-icon-btn-ghost {
+  @apply inline-flex items-center justify-center w-9 h-9 rounded-xl border border-transparent bg-transparent cursor-pointer;
+}
+
+/* Header */
+@utility sv-header {
+  @apply w-full sticky top-0 z-10 bg-white/80 backdrop-blur border-b border-[#e6e7ea];
+}
+@utility sv-header-inner {
+  @apply max-w-6xl mx-auto px-4 h-14 flex items-center justify-between;
+}
+@utility sv-logo {
+  @apply h-7 w-auto block;
+}
+
+/* Sidebar */
+@utility sv-side {
+  @apply w-[220px] p-4 border-r border-[#e6e7eb] bg-white flex flex-col gap-1.5 text-[#111];
+}
+@utility sv-side-title {
+  @apply font-extrabold text-[18px] mb-2 text-[#111];
+}
+@utility sv-nav-item {
+  @apply text-left py-2.5 px-3 rounded-[10px] border border-transparent font-semibold cursor-pointer text-[#111];
+}
+@utility sv-nav-item-active {
+  @apply bg-[#eef2ff] border-[#e5e7eb] font-bold text-[#111];
+}
+@utility sv-nav-item-hover {
+  @apply hover:bg-[#f7f8ff] hover:border-[#eef0ff] hover:text-[#111];
+}
+
+
+/* Layout */
+@utility sv-main { @apply flex-1 p-5; }
+@utility sv-page { @apply max-w-4xl mx-auto mt-6 space-y-4; }
+
