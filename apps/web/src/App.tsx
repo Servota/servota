@@ -14,7 +14,6 @@ import MyUnavailability from './member/MyUnavailability';
 import MyMemberships from './member/MyMemberships';
 
 /* ------------ Types ------------ */
-
 type View =
   | 'home'
   | 'memberships'
@@ -127,7 +126,7 @@ export default function App() {
   if (loading) {
     return (
       <div className="p-6 font-sans max-w-[960px] mx-auto">
-        <p>Loading…</p>
+        <p>Loading...</p>
       </div>
     );
   }
@@ -259,7 +258,7 @@ export default function App() {
 
           {view === 'memberships' && (
             <MyMemberships
-              onOpenAccount={(id, name) => {
+              onOpenAccount={(id: string, name: string) => {
                 setAccountId(id);
                 setTeamId(null);
                 setContext({ accountId: id, teamId: null });
@@ -268,7 +267,7 @@ export default function App() {
                 setAccountLabel(name || '');
                 setView('memberships');
               }}
-              onManageAccount={(id, name) => {
+              onManageAccount={(id: string, name: string) => {
                 setAccountId(id);
                 setTeamId(null);
                 setContext({ accountId: id, teamId: null });
@@ -277,7 +276,7 @@ export default function App() {
                 setAccountLabel(name || '');
                 setView('account-manage');
               }}
-              onOpenTeam={(tid, tname, aid, aname) => {
+              onOpenTeam={(tid: string, tname: string, aid: string, aname: string) => {
                 setAccountId(aid);
                 setTeamId(tid);
                 setContext({ accountId: aid, teamId: tid });
@@ -287,7 +286,7 @@ export default function App() {
                 setTeamLabel(tname || '');
                 setView('team-manage');
               }}
-              onManageTeam={(tid, tname, aid, aname) => {
+              onManageTeam={(tid: string, tname: string, aid: string, aname: string) => {
                 setAccountId(aid);
                 setTeamId(tid);
                 setContext({ accountId: aid, teamId: tid });
@@ -405,7 +404,7 @@ function TeamTabs({
   approvalsEnabled,
 }: {
   value: TeamTab;
-  onChange: any;
+  onChange: any; // <-- change this line
   approvalsEnabled: boolean;
 }) {
   const tabs: { key: TeamTab; label: string; show?: boolean }[] = [
