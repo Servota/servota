@@ -10,7 +10,7 @@ bash: cd apps/mobile pnpm start
 
 ## Run Web (PWA) Server
 
-bash: cd apps/web pnpm dev
+bash: pnpm --filter @servota/web dev
 
 ## Export Database Schema (Hosted Supabase)
 
