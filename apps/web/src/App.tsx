@@ -258,15 +258,6 @@ export default function App() {
 
           {view === 'memberships' && (
             <MyMemberships
-              onOpenAccount={(id: string, name: string) => {
-                setAccountId(id);
-                setTeamId(null);
-                setContext({ accountId: id, teamId: null });
-                localStorage.setItem('servota.accountId', id);
-                localStorage.removeItem('servota.teamId');
-                setAccountLabel(name || '');
-                setView('memberships');
-              }}
               onManageAccount={(id: string, name: string) => {
                 setAccountId(id);
                 setTeamId(null);
@@ -275,16 +266,6 @@ export default function App() {
                 localStorage.removeItem('servota.teamId');
                 setAccountLabel(name || '');
                 setView('account-manage');
-              }}
-              onOpenTeam={(tid: string, tname: string, aid: string, aname: string) => {
-                setAccountId(aid);
-                setTeamId(tid);
-                setContext({ accountId: aid, teamId: tid });
-                localStorage.setItem('servota.accountId', aid);
-                localStorage.setItem('servota.teamId', tid);
-                setAccountLabel(aname || '');
-                setTeamLabel(tname || '');
-                setView('team-manage');
               }}
               onManageTeam={(tid: string, tname: string, aid: string, aname: string) => {
                 setAccountId(aid);
