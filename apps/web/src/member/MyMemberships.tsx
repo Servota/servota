@@ -5,32 +5,47 @@ import { getBrowserSupabaseClient } from '@servota/shared';
 type AccountMembership = {
   account_id: string;
   account_name: string;
-  role: string;
-  // optional text if you later add it
+  role: 'owner' | 'admin' | 'member' | string;
   account_description?: string | null;
 };
 
 type TeamMembership = {
   team_id: string;
   team_name: string;
-  role: string;
+  role: 'scheduler' | 'member' | string;
   team_description?: string | null;
 };
 
-export default function MyMemberships() {
+type Props = {
+  // use any to avoid named param identifiers triggering no-unused-vars in function types
+  onOpenAccount?: any;
+  onManageAccount?: any;
+  onOpenTeam?: any;
+  onManageTeam?: any;
+};
+
+export default function MyMemberships({
+  onOpenAccount,
+  onManageAccount,
+  onOpenTeam,
+  onManageTeam,
+}: Props) {
   const supabase = useMemo(() => getBrowserSupabaseClient(), []);
 
+  // data
   const [accounts, setAccounts] = useState<AccountMembership[] | null>(null);
   const [teamsByAccount, setTeamsByAccount] = useState<
     Record<string, TeamMembership[] | undefined>
   >({});
 
+  // ui
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null);
   const [expandedTeamIds, setExpandedTeamIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  /* loads */
   const getUserId = useCallback(async () => {
     const { data, error } = await supabase.auth.getUser();
     if (error) throw error;
@@ -43,21 +58,20 @@ export default function MyMemberships() {
     setError(null);
     try {
       const userId = await getUserId();
-
       const { data, error } = await supabase
         .from('account_memberships')
-        .select('account_id, role, accounts:account_id ( name )')
+        .select('account_id, role, status, accounts:account_id ( name )')
         .eq('user_id', userId)
         .eq('status', 'active')
         .order('created_at', { ascending: true });
 
       if (error) throw error;
 
-      const rows = (data ?? []).map((r: any) => ({
+      const rows: AccountMembership[] = (data ?? []).map((r: any) => ({
         account_id: r.account_id as string,
-        role: r.role as string,
+        role: (r.role ?? 'member') as AccountMembership['role'],
         account_name: r.accounts?.name ?? 'Unknown',
-      })) as AccountMembership[];
+      }));
 
       setAccounts(rows);
     } catch (e: any) {
@@ -84,10 +98,9 @@ export default function MyMemberships() {
       if (teamsByAccount[accountId] !== undefined) return;
       try {
         const userId = await getUserId();
-
         const { data, error } = await supabase
           .from('team_memberships')
-          .select('team_id, role, teams:team_id ( name )')
+          .select('team_id, role, status, teams:team_id ( name )')
           .eq('user_id', userId)
           .eq('account_id', accountId)
           .eq('status', 'active')
@@ -95,12 +108,11 @@ export default function MyMemberships() {
 
         if (error) throw error;
 
-        const rows = (data ?? []).map((r: any) => ({
+        const rows: TeamMembership[] = (data ?? []).map((r: any) => ({
           team_id: r.team_id as string,
-          role: r.role as string,
+          role: (r.role ?? 'member') as TeamMembership['role'],
           team_name: r.teams?.name ?? 'Unknown',
-        })) as TeamMembership[];
-
+        }));
         setTeamsByAccount((prev) => ({ ...prev, [accountId]: rows }));
       } catch {
         setTeamsByAccount((prev) => ({ ...prev, [accountId]: [] }));
@@ -109,6 +121,7 @@ export default function MyMemberships() {
     [getUserId, supabase, teamsByAccount]
   );
 
+  /* interactions */
   const toggleAccount = (account: AccountMembership) => {
     const willExpand = expandedAccountId !== account.account_id;
     setExpandedTeamIds(new Set());
@@ -125,12 +138,14 @@ export default function MyMemberships() {
     });
   };
 
+  /* derived */
   const list = (accounts ?? []) as AccountMembership[];
   const totalTeams = Object.values(teamsByAccount).reduce(
     (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0),
     0
   );
 
+  /* render */
   return (
     <section className="sv-page">
       <div className="sv-card p-4">
@@ -141,7 +156,6 @@ export default function MyMemberships() {
             {error}
           </p>
         ) : null}
-
         <div className="mt-2">
           <button
             className="sv-btn"
@@ -150,20 +164,22 @@ export default function MyMemberships() {
             disabled={isRefreshing}
             aria-busy={isRefreshing}
           >
-            {isRefreshing ? 'Refreshing…' : 'Refresh'}
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
       </div>
 
-      {!hasLoadedOnce ? <div className="sv-meta mt-2">Loading…</div> : null}
+      {!hasLoadedOnce ? <div className="sv-meta mt-2">Loading...</div> : null}
 
       <div className="mt-3 space-y-2">
         {list.map((a) => {
           const expanded = expandedAccountId === a.account_id;
-          const teams = teamsByAccount[a.account_id];
+          const teams = teamsByAccount[a.account_id]; // undefined => loading
+          const canManageAccount = a.role === 'owner' || a.role === 'admin';
 
           return (
             <div key={a.account_id} className="sv-card p-3">
+              {/* Account header */}
               <div
                 className="sv-card-row items-center justify-between cursor-pointer"
                 onClick={() => toggleAccount(a)}
@@ -184,10 +200,37 @@ export default function MyMemberships() {
                   </div>
                 </div>
                 <div className="text-sm font-bold text-[#111]" aria-hidden>
-                  {expanded ? '▾' : '▸'}
+                  {expanded ? 'v' : '>'}
                 </div>
               </div>
 
+              {/* Account actions */}
+              <div className="mt-2 flex gap-2">
+                <button
+                  className="py-1.5 px-3 rounded-[10px] bg-[#2563eb] border border-[#2563eb] text-white font-bold"
+                  onClick={() => onOpenAccount?.(a.account_id, a.account_name)}
+                >
+                  Open
+                </button>
+                <button
+                  className="py-1.5 px-3 rounded-[10px] font-bold border"
+                  style={{
+                    background: canManageAccount ? '#fff' : '#f3f4f6',
+                    borderColor: '#e5e7eb',
+                    color: '#111',
+                    opacity: canManageAccount ? 1 : 0.6,
+                    cursor: canManageAccount ? 'pointer' : 'not-allowed',
+                  }}
+                  disabled={!canManageAccount}
+                  onClick={() =>
+                    canManageAccount && onManageAccount?.(a.account_id, a.account_name)
+                  }
+                >
+                  Manage Account
+                </button>
+              </div>
+
+              {/* Expanded content */}
               {expanded && (
                 <div id={`account-${a.account_id}-panel`} className="mt-3 space-y-3">
                   {a.account_description ? (
@@ -198,6 +241,7 @@ export default function MyMemberships() {
                     </div>
                   )}
 
+                  {/* Section bar */}
                   <div
                     className="rounded-lg border"
                     style={{ backgroundColor: '#f3f4f6', borderColor: '#ececec' }}
@@ -207,14 +251,17 @@ export default function MyMemberships() {
                     </div>
                   </div>
 
+                  {/* Teams */}
                   {teams === undefined ? (
-                    <div className="sv-meta">Loading teams…</div>
+                    <div className="sv-meta">Loading teams...</div>
                   ) : teams.length === 0 ? (
                     <div className="sv-meta">No team memberships in this account.</div>
                   ) : (
                     <div className="space-y-2">
                       {teams.map((t) => {
                         const isOpen = expandedTeamIds.has(t.team_id);
+                        const canManageTeam = t.role === 'scheduler' || canManageAccount;
+
                         return (
                           <div
                             key={t.team_id}
@@ -238,8 +285,42 @@ export default function MyMemberships() {
                                 {t.role}
                               </span>
                               <div className="text-sm font-bold text-[#111] ml-2" aria-hidden>
-                                {isOpen ? '▾' : '▸'}
+                                {isOpen ? 'v' : '>'}
                               </div>
+                            </div>
+
+                            {/* Team actions */}
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                className="py-1.5 px-3 rounded-[10px] bg-[#2563eb] border border-[#2563eb] text-white font-bold"
+                                onClick={() =>
+                                  onOpenTeam?.(t.team_id, t.team_name, a.account_id, a.account_name)
+                                }
+                              >
+                                Open Team
+                              </button>
+                              <button
+                                className="py-1.5 px-3 rounded-[10px] font-bold border"
+                                style={{
+                                  background: canManageTeam ? '#fff' : '#f3f4f6',
+                                  borderColor: '#e5e7eb',
+                                  color: '#111',
+                                  opacity: canManageTeam ? 1 : 0.6,
+                                  cursor: canManageTeam ? 'pointer' : 'not-allowed',
+                                }}
+                                disabled={!canManageTeam}
+                                onClick={() =>
+                                  canManageTeam &&
+                                  onManageTeam?.(
+                                    t.team_id,
+                                    t.team_name,
+                                    a.account_id,
+                                    a.account_name
+                                  )
+                                }
+                              >
+                                Manage Team
+                              </button>
                             </div>
 
                             {isOpen && (
@@ -265,8 +346,7 @@ export default function MyMemberships() {
 
       {Array.isArray(accounts) ? (
         <div className="sv-meta text-center mt-3">
-          Total: {accounts.length} account{accounts.length === 1 ? '' : 's'} • {totalTeams} team
-          {totalTeams === 1 ? '' : 's'}
+          Total: {accounts.length} accounts - {totalTeams} teams
         </div>
       ) : null}
     </section>
