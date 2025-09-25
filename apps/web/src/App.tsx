@@ -221,8 +221,6 @@ export default function App() {
       {/* Body */}
       <div className="flex min-h-[calc(100vh-56px)]">
         <aside className="sv-side">
-          <div className="sv-side-title">Servota</div>
-
           <NavItem label="Home" active={view === 'home'} onClick={() => setView('home')} />
           <NavItem
             label="Memberships"
@@ -346,7 +344,6 @@ export default function App() {
 
           {view === 'roster' && (
             <section className="sv-page">
-              <h1 className="sv-h1">My Roster</h1>
               <MyRoster />
             </section>
           )}

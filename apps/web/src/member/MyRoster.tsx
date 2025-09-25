@@ -1,6 +1,6 @@
 // apps/web/src/member/MyRoster.tsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { getBrowserSupabaseClient /*, getContext*/ } from '@servota/shared';
+import { getBrowserSupabaseClient } from '@servota/shared';
 import EventDetails, { type SelectedEvent } from './EventDetails';
 
 type Row = {
@@ -23,8 +23,6 @@ type Row = {
 
 export default function MyRoster() {
   const supabase = useMemo(() => getBrowserSupabaseClient(), []);
-  // NOTE: temporarily ignore account/team scope to avoid filtering away real rows
-  // const { accountId, teamId } = (getContext() ?? {}) as { accountId: string | null; teamId: string | null };
 
   const [userId, setUserId] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
@@ -47,18 +45,17 @@ export default function MyRoster() {
     };
   }, [supabase]);
 
-  // Load "my" assignments with a generous window (yesterday → +1 year)
+  // Load my assignments (yesterday -> +1 year). We do not scope by account/team here.
   const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     setError(null);
-
     try {
       const now = Date.now();
       const fromIso = new Date(now - 24 * 3600 * 1000).toISOString();
       const toIso = new Date(now + 365 * 24 * 3600 * 1000).toISOString();
 
-      let q = supabase
+      const { data, error } = await supabase
         .from('assignments')
         .select(
           `
@@ -86,11 +83,6 @@ export default function MyRoster() {
         .not('event_id', 'is', null)
         .limit(200);
 
-      // TEMP: do not scope by account/team to ensure visibility
-      // if (accountId) q = q.eq('account_id', accountId);
-      // if (teamId) q = q.eq('events.team_id', teamId);
-
-      const { data, error } = await q;
       if (error) throw error;
       setRows((data ?? []) as Row[]);
     } catch (e: any) {
@@ -107,21 +99,22 @@ export default function MyRoster() {
 
   return (
     <section className="sv-page">
+      {/* Header card (keep this) */}
       <div className="sv-card p-4">
         <h2 className="sv-h1">My Roster</h2>
         <p className="sv-meta">
           Tap a rostered event to view details (and other dates in the series).
         </p>
-        {error && (
+        {error ? (
           <p className="sv-meta" style={{ color: '#c00' }}>
             {error}
           </p>
-        )}
+        ) : null}
       </div>
 
-      {loading && <div className="sv-meta">Loading...</div>}
+      {loading && <div className="sv-meta mt-2">Loading...</div>}
       {!loading && !error && rows.length === 0 && (
-        <div className="sv-card p-4">No upcoming assignments.</div>
+        <div className="sv-card p-4 mt-2">No upcoming assignments.</div>
       )}
 
       <ul className="space-y-2 mt-3">
@@ -158,7 +151,7 @@ export default function MyRoster() {
                 })
               }
             >
-              {/* Left: blue date badge + details */}
+              {/* Left: date badge + details */}
               <div className="flex gap-3 items-start">
                 <div
                   className="w-11 rounded-[10px] border-2 bg-white flex flex-col items-center py-1.5"
