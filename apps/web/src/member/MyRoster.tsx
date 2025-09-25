@@ -1,6 +1,6 @@
 // apps/web/src/member/MyRoster.tsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { getBrowserSupabaseClient, getContext } from '@servota/shared';
+import { getBrowserSupabaseClient /*, getContext*/ } from '@servota/shared';
 import EventDetails, { type SelectedEvent } from './EventDetails';
 
 type Row = {
@@ -23,10 +23,8 @@ type Row = {
 
 export default function MyRoster() {
   const supabase = useMemo(() => getBrowserSupabaseClient(), []);
-  const { accountId, teamId } = (getContext() ?? {}) as {
-    accountId: string | null;
-    teamId: string | null;
-  };
+  // NOTE: temporarily ignore account/team scope to avoid filtering away real rows
+  // const { accountId, teamId } = (getContext() ?? {}) as { accountId: string | null; teamId: string | null };
 
   const [userId, setUserId] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
@@ -34,7 +32,6 @@ export default function MyRoster() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<SelectedEvent | null>(null);
 
-  // Resolve current user
   useEffect(() => {
     let mounted = true;
     supabase.auth.getUser().then(({ data, error }) => {
@@ -58,8 +55,8 @@ export default function MyRoster() {
 
     try {
       const now = Date.now();
-      const fromIso = new Date(now - 24 * 3600 * 1000).toISOString(); // yesterday
-      const toIso = new Date(now + 365 * 24 * 3600 * 1000).toISOString(); // +1 year
+      const fromIso = new Date(now - 24 * 3600 * 1000).toISOString();
+      const toIso = new Date(now + 365 * 24 * 3600 * 1000).toISOString();
 
       let q = supabase
         .from('assignments')
@@ -89,8 +86,9 @@ export default function MyRoster() {
         .not('event_id', 'is', null)
         .limit(200);
 
-      if (accountId) q = q.eq('account_id', accountId);
-      if (teamId) q = q.eq('events.team_id', teamId);
+      // TEMP: do not scope by account/team to ensure visibility
+      // if (accountId) q = q.eq('account_id', accountId);
+      // if (teamId) q = q.eq('events.team_id', teamId);
 
       const { data, error } = await q;
       if (error) throw error;
@@ -101,7 +99,7 @@ export default function MyRoster() {
     } finally {
       setLoading(false);
     }
-  }, [supabase, userId, accountId, teamId]);
+  }, [supabase, userId]);
 
   useEffect(() => {
     load();
@@ -121,7 +119,7 @@ export default function MyRoster() {
         )}
       </div>
 
-      {loading && <div className="sv-meta">Loading…</div>}
+      {loading && <div className="sv-meta">Loading...</div>}
       {!loading && !error && rows.length === 0 && (
         <div className="sv-card p-4">No upcoming assignments.</div>
       )}
@@ -162,7 +160,6 @@ export default function MyRoster() {
             >
               {/* Left: blue date badge + details */}
               <div className="flex gap-3 items-start">
-                {/* Badge (matches mobile look) */}
                 <div
                   className="w-11 rounded-[10px] border-2 bg-white flex flex-col items-center py-1.5"
                   style={{ borderColor: '#1C94B3' }}
@@ -173,12 +170,11 @@ export default function MyRoster() {
                   <span className="text-[18px] font-extrabold text-[#111]">{badge.day}</span>
                 </div>
 
-                {/* Details */}
                 <div>
                   <div className="font-semibold">
                     {ev.label ?? 'Event'}{' '}
                     <span className="opacity-70 text-sm">
-                      ({startsStr} – {endsStr})
+                      ({startsStr} - {endsStr})
                     </span>
                   </div>
                   {ev.description && <div className="sv-meta mt-1">{ev.description}</div>}
