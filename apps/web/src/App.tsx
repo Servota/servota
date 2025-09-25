@@ -12,6 +12,7 @@ import AccountConsole from './console/account/AccountConsole';
 import MyRoster from './member/MyRoster';
 import MyUnavailability from './member/MyUnavailability';
 import MyMemberships from './member/MyMemberships';
+import MyDetails from './member/MyDetails';
 
 /* ------------ Types ------------ */
 type View =
@@ -21,7 +22,8 @@ type View =
   | 'roster'
   | 'settings'
   | 'account-manage'
-  | 'team-manage';
+  | 'team-manage'
+  | 'details';
 
 type TeamTab = 'members' | 'requirements' | 'schedule' | 'approvals' | 'settings';
 
@@ -234,6 +236,11 @@ export default function App() {
           />
           <NavItem label="My Roster" active={view === 'roster'} onClick={() => setView('roster')} />
           <NavItem
+            label="My Details"
+            active={view === 'details'}
+            onClick={() => setView('details')}
+          />
+          <NavItem
             label="Settings"
             active={view === 'settings'}
             onClick={() => setView('settings')}
@@ -310,7 +317,7 @@ export default function App() {
               </div>
               <TeamTabs
                 value={teamTab}
-                onChange={setTeamTab}
+                onChange={setTeamTab as any}
                 approvalsEnabled={allowSwaps && requireApproval}
               />
 
@@ -341,6 +348,12 @@ export default function App() {
             <section className="sv-page">
               <h1 className="sv-h1">My Roster</h1>
               <MyRoster />
+            </section>
+          )}
+
+          {view === 'details' && (
+            <section className="sv-page">
+              <MyDetails />
             </section>
           )}
 
@@ -385,7 +398,7 @@ function TeamTabs({
   approvalsEnabled,
 }: {
   value: TeamTab;
-  onChange: any; // <-- change this line
+  onChange: any; // keep relaxed for ESLint/CI
   approvalsEnabled: boolean;
 }) {
   const tabs: { key: TeamTab; label: string; show?: boolean }[] = [
