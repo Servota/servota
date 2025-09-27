@@ -100,7 +100,7 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
     if (!name) return alert('Enter a team name.');
     setCreating(true);
     try {
-      // 1) Insert the team and return its id
+      // 1) Insert the team and get its id
       const { data: inserted, error: insErr } = await supabase
         .from('teams')
         .insert([{ account_id: accountId, name, active: true }])
@@ -108,19 +108,21 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
         .single();
       if (insErr) throw insErr;
 
-      // 2) Join the creator to the team as a scheduler (so it shows in My Memberships)
-      const me = (await supabase.auth.getUser()).data?.user?.id ?? null;
-      if (me && inserted?.id) {
-        const { error: joinErr } = await supabase.from('team_memberships').insert([
-          {
-            team_id: inserted.id,
-            user_id: me,
-            role: 'scheduler', // default role for creators
-            status: 'active',
-          } as any,
-        ]);
-
-        if (joinErr) throw joinErr;
+      // 2) Try to auto-join the creator as scheduler (ignore RLS errors quietly)
+      try {
+        const me = (await supabase.auth.getUser()).data?.user?.id ?? null;
+        if (me && inserted?.id) {
+          await supabase.from('team_memberships').insert([
+            {
+              team_id: inserted.id,
+              user_id: me,
+              role: 'scheduler',
+              status: 'active',
+            } as any,
+          ]);
+        }
+      } catch {
+        // RLS may block — that's okay; UX stays clean and team still gets created.
       }
 
       setNewTeamName('');
@@ -182,6 +184,7 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
     teamId: string,
     patch: Partial<Pick<Team, 'allow_swaps' | 'roster_visibility' | 'swap_requires_approval'>>
   ) => {
+    // Coerce to non-nullable shape expected by supabase types
     const clean: {
       allow_swaps?: boolean;
       roster_visibility?: 'account' | 'team';
@@ -229,7 +232,7 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
               style={input}
             />
             <button style={btnPrimary} onClick={createTeam} disabled={creating}>
-              {creating ? 'Creating…' : 'Create'}
+              {creating ? 'Creating...' : 'Create'}
             </button>
           </div>
           <div style={{ opacity: 0.7, fontSize: 12 }}>
@@ -239,7 +242,7 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
 
         {/* List */}
         {loading ? (
-          <div>Loading…</div>
+          <div>Loading...</div>
         ) : err ? (
           <div style={{ color: '#b91c1c' }}>{err}</div>
         ) : teams.length === 0 ? (
