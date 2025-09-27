@@ -100,27 +100,29 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
     if (!name) return alert('Enter a team name.');
     setCreating(true);
     try {
-      // Prefer RPC if present; fallback to direct insert
-      const rpc = (supabase as any).rpc;
-      if (rpc) {
-        const { error: rpcErr } = await rpc('create_team', {
-          p_account_id: accountId,
-          p_name: name,
-        });
-        if (rpcErr && !String(rpcErr.message || '').includes('function create_team')) {
-          throw rpcErr;
-        } else if (rpcErr) {
-          const { error: insErr } = await supabase
-            .from('teams')
-            .insert([{ account_id: accountId, name, active: true }]);
-          if (insErr) throw insErr;
-        }
-      } else {
-        const { error: insErr } = await supabase
-          .from('teams')
-          .insert([{ account_id: accountId, name, active: true }]);
-        if (insErr) throw insErr;
+      // 1) Insert the team and return its id
+      const { data: inserted, error: insErr } = await supabase
+        .from('teams')
+        .insert([{ account_id: accountId, name, active: true }])
+        .select('id')
+        .single();
+      if (insErr) throw insErr;
+
+      // 2) Join the creator to the team as a scheduler (so it shows in My Memberships)
+      const me = (await supabase.auth.getUser()).data?.user?.id ?? null;
+      if (me && inserted?.id) {
+        const { error: joinErr } = await supabase.from('team_memberships').insert([
+          {
+            team_id: inserted.id,
+            user_id: me,
+            role: 'scheduler', // default role for creators
+            status: 'active',
+          } as any,
+        ]);
+
+        if (joinErr) throw joinErr;
       }
+
       setNewTeamName('');
       await load();
     } catch (e: any) {
@@ -180,7 +182,6 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
     teamId: string,
     patch: Partial<Pick<Team, 'allow_swaps' | 'roster_visibility' | 'swap_requires_approval'>>
   ) => {
-    // Coerce to non-nullable shape expected by supabase types
     const clean: {
       allow_swaps?: boolean;
       roster_visibility?: 'account' | 'team';

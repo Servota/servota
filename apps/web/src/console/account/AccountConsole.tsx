@@ -1,12 +1,13 @@
-// apps/web/src/AccountConsole.tsx
+// apps/web/src/console/account/AccountConsole.tsx
 import React, { useState } from 'react';
 import { getContext } from '@servota/shared';
 import AccountMembers from './AccountMembers';
+import AccountTeams from './AccountTeams';
 
 /**
  * Manage Account console:
  * - Members tab lives in ./AccountMembers (invite = Viewer; owner-only role edits)
- * - Teams tab (placeholder)
+ * - Teams tab lives in ./AccountTeams (create/rename/archive/delete)
  * - Settings tab (placeholder)
  */
 
@@ -32,7 +33,7 @@ export default function AccountConsole() {
       <h2 style={{ marginTop: 0 }}>Manage Account</h2>
       <Tabs value={tab} onChange={setTab} />
       {tab === 'members' && <AccountMembers accountId={accountId} />}
-      {tab === 'teams' && <AccountTeams />}
+      {tab === 'teams' && <AccountTeams accountId={accountId} />}
       {tab === 'settings' && <AccountSettings />}
     </section>
   );
@@ -69,21 +70,6 @@ function Tabs({
       {btn('members', 'Members')}
       {btn('teams', 'Teams')}
       {btn('settings', 'Settings')}
-    </div>
-  );
-}
-
-/* ---------------- Teams (placeholder, no unused props) ---------------- */
-
-function AccountTeams() {
-  return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{ padding: 10, borderBottom: '1px solid #f1f5f9' }}>
-        <strong>Teams</strong>
-      </div>
-      <div style={{ padding: 10 }}>
-        <p style={{ opacity: 0.8 }}>Team management UI to be built here (create/delete teams).</p>
-      </div>
     </div>
   );
 }
