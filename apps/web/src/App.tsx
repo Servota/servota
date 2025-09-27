@@ -13,6 +13,7 @@ import MyRoster from './member/MyRoster';
 import MyUnavailability from './member/MyUnavailability';
 import MyMemberships from './member/MyMemberships';
 import MyDetails from './member/MyDetails';
+import Home from './member/Home';
 
 /* ------------ Types ------------ */
 type View =
@@ -252,14 +253,7 @@ export default function App() {
         </aside>
 
         <main className="sv-main">
-          {view === 'home' && (
-            <section className="sv-page">
-              <div className="sv-card p-4">
-                <h1 className="sv-h1">Home</h1>
-                <p className="sv-meta">This will become a “My Roster” summary.</p>
-              </div>
-            </section>
-          )}
+          {view === 'home' && <Home onNavigate={(target) => setView(target as any)} />}
 
           {view === 'memberships' && (
             <MyMemberships
