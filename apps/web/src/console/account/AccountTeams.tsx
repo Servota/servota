@@ -20,33 +20,61 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
 
-  const input: React.CSSProperties = {
-    padding: '8px 10px',
-    borderRadius: 10,
-    border: '1px solid #ddd',
-    minWidth: 220,
-  };
-  const btn: React.CSSProperties = {
-    padding: '6px 10px',
-    borderRadius: 8,
-    border: '1px solid #e5e7eb',
-    background: '#fff',
-    cursor: 'pointer',
-  };
-  const btnPrimary: React.CSSProperties = {
-    ...btn,
-    border: '1px solid #2563eb',
-    background: '#2563eb',
-    color: '#fff',
-    fontWeight: 700,
-  };
-  const btnDanger: React.CSSProperties = {
-    ...btn,
-    border: '1px solid #ef4444',
-    color: '#ef4444',
-    fontWeight: 700,
+  /* ===== Styles (mirroring mobile look/feel) ===== */
+  const colors = {
+    bg: '#fafafa',
+    cardBg: '#fff',
+    border: '#ececec',
+    borderSoft: '#d1d5db',
+    text: '#111',
+    muted: '#6b7280',
+    primary: '#111',
+    secondaryBg: '#eef1f5',
   };
 
+  const card: React.CSSProperties = {
+    border: `1px solid ${colors.border}`,
+    borderRadius: 14,
+    background: colors.cardBg,
+    overflow: 'hidden',
+    boxShadow: '0 3px 6px rgba(0,0,0,0.06)',
+  };
+  const header: React.CSSProperties = {
+    padding: 12,
+    borderBottom: `1px solid ${colors.border}`,
+    fontWeight: 800,
+    color: colors.text,
+  };
+  const body: React.CSSProperties = { padding: 12, background: colors.cardBg };
+
+  const input: React.CSSProperties = {
+    padding: '12px',
+    borderRadius: 12,
+    border: `1px solid ${colors.borderSoft}`,
+    background: '#fff',
+    outline: 'none',
+  };
+  const btnBase: React.CSSProperties = {
+    padding: '10px 12px',
+    borderRadius: 12,
+    border: `1px solid ${colors.border}`,
+    cursor: 'pointer',
+    fontWeight: 800,
+  };
+  const btnPrimary: React.CSSProperties = {
+    ...btnBase,
+    background: colors.primary,
+    color: '#fff',
+    border: `1px solid ${colors.primary}`,
+  };
+  const btnDanger: React.CSSProperties = {
+    ...btnBase,
+    border: '1px solid #ef4444',
+    color: '#ef4444',
+    background: '#fff',
+  };
+
+  const tableWrap: React.CSSProperties = { overflowX: 'auto' };
   const table: React.CSSProperties = {
     width: '100%',
     borderCollapse: 'separate',
@@ -55,13 +83,21 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
   const th: React.CSSProperties = {
     textAlign: 'left',
     background: '#f8fafc',
-    borderBottom: '1px solid #e5e7eb',
-    padding: '8px 10px',
+    borderBottom: `1px solid ${colors.border}`,
+    padding: '12px',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    color: colors.muted,
   };
-  const thLeft = { ...th, borderRight: '1px solid #e5e7eb' };
-  const tdLeft: React.CSSProperties = { padding: '10px', borderTop: '1px solid #f1f5f9' };
-  const td: React.CSSProperties = { padding: '10px', borderTop: '1px solid #f1f5f9' };
+  const td: React.CSSProperties = {
+    padding: '12px',
+    borderTop: `1px solid ${colors.border}`,
+    verticalAlign: 'middle',
+    color: colors.text,
+  };
 
+  /* ===== Data ===== */
   const load = async () => {
     setLoading(true);
     setErr(null);
@@ -170,115 +206,117 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
     }
   };
 
+  /* ===== UI ===== */
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{ padding: 10, borderBottom: '1px solid #f1f5f9' }}>
-        <strong>Teams</strong>
+    <div style={card}>
+      <div style={header}>Teams</div>
+
+      <div style={{ ...body, borderBottom: `1px solid ${colors.border}` }}>
+        <div style={{ fontWeight: 800, marginBottom: 8, color: colors.text }}>Create team</div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr auto',
+            gap: 10,
+            alignItems: 'center',
+            maxWidth: 640,
+          }}
+        >
+          <input
+            placeholder="Team name"
+            value={newTeamName}
+            onChange={(e) => setNewTeamName(e.currentTarget.value)}
+            style={input}
+          />
+          <button
+            style={{ ...btnPrimary, opacity: creating ? 0.6 : 1 }}
+            onClick={createTeam}
+            disabled={creating}
+          >
+            {creating ? 'Creating…' : 'Create'}
+          </button>
+        </div>
       </div>
 
-      <div style={{ padding: 10 }}>
-        {/* Create */}
-        <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
-          <div style={{ fontWeight: 700 }}>Create team</div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr auto',
-              gap: 8,
-              alignItems: 'center',
-            }}
-          >
-            <input
-              placeholder="Team name"
-              value={newTeamName}
-              onChange={(e) => setNewTeamName(e.currentTarget.value)}
-              style={input}
-            />
-            <button style={btnPrimary} onClick={createTeam} disabled={creating}>
-              {creating ? 'Creating...' : 'Create'}
-            </button>
-          </div>
-        </div>
-
-        {/* List */}
+      <div style={body}>
         {loading ? (
-          <div>Loading...</div>
+          <div style={{ color: colors.muted }}>Loading…</div>
         ) : err ? (
           <div style={{ color: '#b91c1c' }}>{err}</div>
         ) : teams.length === 0 ? (
-          <div style={{ opacity: 0.7 }}>No teams yet.</div>
+          <div style={{ color: colors.muted }}>No teams yet.</div>
         ) : (
-          <table style={table}>
-            <thead>
-              <tr>
-                <th style={thLeft}>Team</th>
-                <th style={th}>Active</th>
-                <th style={th}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {teams.map((t) => {
-                const isEditing = editingId === t.id;
-                return (
-                  <tr key={t.id}>
-                    <td style={tdLeft}>
-                      {isEditing ? (
-                        <div
-                          style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 6 }}
-                        >
+          <div style={tableWrap}>
+            <table style={table}>
+              <thead>
+                <tr>
+                  <th style={th}>Team</th>
+                  <th style={th}>Active</th>
+                  <th style={th}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teams.map((t) => {
+                  const isEditing = editingId === t.id;
+                  return (
+                    <tr key={t.id}>
+                      <td style={td}>
+                        {isEditing ? (
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <input
+                              value={editName}
+                              onChange={(e) => setEditName(e.currentTarget.value)}
+                              style={input}
+                            />
+                            <button style={btnPrimary} onClick={() => saveRename(t.id)}>
+                              Save
+                            </button>
+                            <button
+                              style={btnBase}
+                              onClick={() => {
+                                setEditingId(null);
+                                setEditName('');
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          t.name
+                        )}
+                      </td>
+                      <td style={td}>
+                        <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                           <input
-                            value={editName}
-                            onChange={(e) => setEditName(e.currentTarget.value)}
-                            style={input}
+                            type="checkbox"
+                            checked={!!t.active}
+                            onChange={(e) => toggleActive(t.id, e.currentTarget.checked)}
                           />
-                          <button style={btnPrimary} onClick={() => saveRename(t.id)}>
-                            Save
-                          </button>
-                          <button
-                            style={btn}
-                            onClick={() => {
-                              setEditingId(null);
-                              setEditName('');
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        t.name
-                      )}
-                    </td>
-                    <td style={td}>
-                      <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                        <input
-                          type="checkbox"
-                          checked={!!t.active}
-                          onChange={(e) => toggleActive(t.id, e.currentTarget.checked)}
-                        />
-                        <span>{t.active ? 'active' : 'archived'}</span>
-                      </label>
-                    </td>
-                    <td style={td}>
-                      {isEditing ? null : (
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          <button style={btn} onClick={() => beginRename(t)}>
-                            Rename
-                          </button>
-                          <button
-                            style={btnDanger}
-                            onClick={() => hardDelete(t.id)}
-                            title="Permanent delete (consider archiving instead)"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                          <span>{t.active ? 'active' : 'archived'}</span>
+                        </label>
+                      </td>
+                      <td style={td}>
+                        {!isEditing && (
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <button style={btnBase} onClick={() => beginRename(t)}>
+                              Rename
+                            </button>
+                            <button
+                              style={btnDanger}
+                              onClick={() => hardDelete(t.id)}
+                              title="Permanent delete (consider archiving instead)"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
