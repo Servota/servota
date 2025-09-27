@@ -4,13 +4,6 @@ import { getContext } from '@servota/shared';
 import AccountMembers from './AccountMembers';
 import AccountTeams from './AccountTeams';
 
-/**
- * Manage Account console:
- * - Members tab lives in ./AccountMembers (invite = Viewer; owner-only role edits)
- * - Teams tab lives in ./AccountTeams (create/rename/archive/delete)
- * - Settings tab (placeholder)
- */
-
 type Tab = 'members' | 'teams' | 'settings';
 
 export default function AccountConsole() {
@@ -39,34 +32,46 @@ export default function AccountConsole() {
   );
 }
 
-/* ---------------- Tabs ---------------- */
-
 function Tabs({
   value,
   onChange,
 }: {
   value: Tab;
-  onChange: any; // keep lint happy (some configs flag unused param names in function types)
+  onChange: any; // keep lint happy (rule flags named params in function types)
 }) {
-  const btn = (k: Tab, label: string) => (
-    <button
-      key={k}
-      onClick={() => onChange(k)}
-      style={{
-        padding: '6px 10px',
-        borderRadius: 8,
-        border: '1px solid #e5e7eb',
-        background: value === k ? '#f3f4f6' : '#fff',
-        fontWeight: 700,
-        cursor: 'pointer',
-        marginRight: 6,
-      }}
-    >
-      {label}
-    </button>
-  );
+  const colors = {
+    chip: '#eef1f5',
+    active: '#111',
+    border: '#ececec',
+    text: '#111',
+  };
+  const wrap: React.CSSProperties = {
+    display: 'flex',
+    gap: 8,
+    marginBottom: 12,
+  };
+  const btn = (k: Tab, label: string) => {
+    const active = value === k;
+    return (
+      <button
+        key={k}
+        onClick={() => onChange(k)}
+        style={{
+          padding: '10px 14px',
+          borderRadius: 12,
+          border: `1px solid ${active ? colors.active : colors.border}`,
+          background: active ? colors.active : colors.chip,
+          color: active ? '#fff' : colors.text,
+          fontWeight: 800,
+          cursor: 'pointer',
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
   return (
-    <div style={{ marginBottom: 10 }}>
+    <div style={wrap}>
       {btn('members', 'Members')}
       {btn('teams', 'Teams')}
       {btn('settings', 'Settings')}
@@ -74,18 +79,22 @@ function Tabs({
   );
 }
 
-/* ---------------- Settings (placeholder) ---------------- */
-
 function AccountSettings() {
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{ padding: 10, borderBottom: '1px solid #f1f5f9' }}>
-        <strong>Settings</strong>
+    <div
+      style={{
+        border: '1px solid #ececec',
+        borderRadius: 14,
+        background: '#fff',
+        overflow: 'hidden',
+        boxShadow: '0 3px 6px rgba(0,0,0,0.06)',
+      }}
+    >
+      <div style={{ padding: 12, borderBottom: '1px solid #ececec', fontWeight: 800 }}>
+        Settings
       </div>
-      <div style={{ padding: 10 }}>
-        <div style={{ opacity: 0.8 }}>
-          Coming soon: plan, limits, suspension, export, billing links, etc.
-        </div>
+      <div style={{ padding: 12, color: '#6b7280' }}>
+        Coming soon: plan, limits, suspension, export, billing links, etc.
       </div>
     </div>
   );
