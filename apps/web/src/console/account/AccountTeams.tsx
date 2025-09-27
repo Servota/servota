@@ -108,12 +108,13 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
         .single();
       if (insErr) throw insErr;
 
-      // 2) Try to auto-join the creator as scheduler (ignore RLS errors quietly)
+      // 2) Try to auto-join the creator as scheduler (include account_id for RLS)
       try {
         const me = (await supabase.auth.getUser()).data?.user?.id ?? null;
         if (me && inserted?.id) {
           await supabase.from('team_memberships').insert([
             {
+              account_id: accountId, // <-- important for RLS checks
               team_id: inserted.id,
               user_id: me,
               role: 'scheduler',
@@ -122,7 +123,7 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
           ]);
         }
       } catch {
-        // RLS may block — that's okay; UX stays clean and team still gets created.
+        // If RLS still blocks, ignore so UX stays clean; we’ll tune policies next if needed.
       }
 
       setNewTeamName('');
@@ -184,7 +185,6 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
     teamId: string,
     patch: Partial<Pick<Team, 'allow_swaps' | 'roster_visibility' | 'swap_requires_approval'>>
   ) => {
-    // Coerce to non-nullable shape expected by supabase types
     const clean: {
       allow_swaps?: boolean;
       roster_visibility?: 'account' | 'team';
