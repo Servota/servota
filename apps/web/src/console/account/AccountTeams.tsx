@@ -6,9 +6,6 @@ type Team = {
   id: string;
   name: string;
   active: boolean | null;
-  allow_swaps: boolean | null;
-  roster_visibility: 'account' | 'team' | null;
-  swap_requires_approval: boolean | null;
 };
 
 export default function AccountTeams({ accountId }: { accountId: string }) {
@@ -17,11 +14,9 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
   const [err, setErr] = useState<string | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
 
-  // create
   const [newTeamName, setNewTeamName] = useState('');
   const [creating, setCreating] = useState(false);
 
-  // inline rename state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
 
@@ -30,11 +25,6 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
     borderRadius: 10,
     border: '1px solid #ddd',
     minWidth: 220,
-  };
-  const select: React.CSSProperties = {
-    padding: '6px 8px',
-    borderRadius: 8,
-    border: '1px solid #ddd',
   };
   const btn: React.CSSProperties = {
     padding: '6px 10px',
@@ -78,7 +68,7 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
     try {
       const { data, error } = await supabase
         .from('teams')
-        .select('id,name,active,allow_swaps,roster_visibility,swap_requires_approval')
+        .select('id,name,active')
         .eq('account_id', accountId)
         .order('name', { ascending: true });
       if (error) throw error;
@@ -100,7 +90,6 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
     if (!name) return alert('Enter a team name.');
     setCreating(true);
     try {
-      // 1) Insert the team and get its id
       const { data: inserted, error: insErr } = await supabase
         .from('teams')
         .insert([{ account_id: accountId, name, active: true }])
@@ -108,13 +97,13 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
         .single();
       if (insErr) throw insErr;
 
-      // 2) Try to auto-join the creator as scheduler (include account_id for RLS)
+      // auto-join creator quietly
       try {
         const me = (await supabase.auth.getUser()).data?.user?.id ?? null;
         if (me && inserted?.id) {
           await supabase.from('team_memberships').insert([
             {
-              account_id: accountId, // <-- important for RLS checks
+              account_id: accountId,
               team_id: inserted.id,
               user_id: me,
               role: 'scheduler',
@@ -123,7 +112,7 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
           ]);
         }
       } catch {
-        // If RLS still blocks, ignore so UX stays clean; we’ll tune policies next if needed.
+        // ignore if RLS blocks
       }
 
       setNewTeamName('');
@@ -181,32 +170,6 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
     }
   };
 
-  const updateSetting = async (
-    teamId: string,
-    patch: Partial<Pick<Team, 'allow_swaps' | 'roster_visibility' | 'swap_requires_approval'>>
-  ) => {
-    const clean: {
-      allow_swaps?: boolean;
-      roster_visibility?: 'account' | 'team';
-      swap_requires_approval?: boolean;
-    } = {};
-
-    if ('allow_swaps' in patch) clean.allow_swaps = !!patch.allow_swaps;
-    if ('swap_requires_approval' in patch)
-      clean.swap_requires_approval = !!patch.swap_requires_approval;
-    if ('roster_visibility' in patch && patch.roster_visibility) {
-      clean.roster_visibility = patch.roster_visibility;
-    }
-
-    try {
-      const { error } = await supabase.from('teams').update(clean).eq('id', teamId);
-      if (error) throw error;
-      await load();
-    } catch (e: any) {
-      alert(e?.message ?? 'Could not update team settings');
-    }
-  };
-
   return (
     <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
       <div style={{ padding: 10, borderBottom: '1px solid #f1f5f9' }}>
@@ -235,9 +198,6 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
               {creating ? 'Creating...' : 'Create'}
             </button>
           </div>
-          <div style={{ opacity: 0.7, fontSize: 12 }}>
-            Tip: You can archive teams instead of deleting to keep history intact.
-          </div>
         </div>
 
         {/* List */}
@@ -253,9 +213,6 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
               <tr>
                 <th style={thLeft}>Team</th>
                 <th style={th}>Active</th>
-                <th style={th}>Allow swaps</th>
-                <th style={th}>Roster visibility</th>
-                <th style={th}>Swap needs approval</th>
                 <th style={th}>Actions</th>
               </tr>
             </thead>
@@ -300,41 +257,6 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
                         />
                         <span>{t.active ? 'active' : 'archived'}</span>
                       </label>
-                    </td>
-                    <td style={td}>
-                      <input
-                        type="checkbox"
-                        checked={!!t.allow_swaps}
-                        onChange={(e) =>
-                          updateSetting(t.id, { allow_swaps: e.currentTarget.checked })
-                        }
-                        title="If enabled, members can request swaps"
-                      />
-                    </td>
-                    <td style={td}>
-                      <select
-                        value={t.roster_visibility ?? 'team'}
-                        onChange={(e) =>
-                          updateSetting(t.id, {
-                            roster_visibility: e.currentTarget.value as Team['roster_visibility'],
-                          })
-                        }
-                        style={select}
-                        title="Who can see this team's roster"
-                      >
-                        <option value="team">team</option>
-                        <option value="account">account</option>
-                      </select>
-                    </td>
-                    <td style={td}>
-                      <input
-                        type="checkbox"
-                        checked={!!t.swap_requires_approval}
-                        onChange={(e) =>
-                          updateSetting(t.id, { swap_requires_approval: e.currentTarget.checked })
-                        }
-                        title="If enabled, swaps require admin approval"
-                      />
                     </td>
                     <td style={td}>
                       {isEditing ? null : (
