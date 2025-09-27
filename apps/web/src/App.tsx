@@ -253,7 +253,7 @@ export default function App() {
         </aside>
 
         <main className="sv-main">
-          {view === 'home' && <Home onNavigate={(target) => setView(target as any)} />}
+          {view === 'home' && <Home onNavigate={(target: string) => setView(target as any)} />}
 
           {view === 'memberships' && (
             <MyMemberships
