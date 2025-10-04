@@ -15,6 +15,9 @@ import MyMemberships from './member/MyMemberships';
 import MyDetails from './member/MyDetails';
 import Home from './member/Home';
 
+import SignInView from './auth/SignInView';
+import SignUpView from './auth/SignUpView';
+
 /* ------------ Types ------------ */
 type View =
   | 'home'
@@ -32,6 +35,8 @@ type SessionT = {
   user: { id: string; email?: string | null } | null;
 } | null;
 
+type AuthMode = 'signin' | 'signup';
+
 /* ------------ App ------------ */
 
 export default function App() {
@@ -39,9 +44,8 @@ export default function App() {
   const [session, setSession] = useState<SessionT>(null);
   const [loading, setLoading] = useState(true);
 
-  // auth form
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  // auth mode (mobile parity)
+  const [authMode, setAuthMode] = useState<AuthMode>('signin');
 
   // navigation / scope
   const [view, setView] = useState<View>('home');
@@ -105,15 +109,6 @@ export default function App() {
   }, [teamId, teamTab]);
 
   /* ------------ actions ------------ */
-
-  const signIn = async () => {
-    if (!email || !password) return alert('Enter email and password');
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) alert(error.message);
-  };
-
   const signOut = async () => {
     await supabase.auth.signOut();
     clearContext();
@@ -137,30 +132,12 @@ export default function App() {
   if (!session?.user) {
     return (
       <div className="grid place-items-center min-h-screen font-sans">
-        <div className="w-[360px] p-5 border border-[#e5e7eb] rounded-[12px] shadow">
-          <h1 className="mt-0 text-[#111] font-bold text-[20px]">Servota Web</h1>
-          <p className="opacity-80">Sign in to continue.</p>
-          <div className="grid gap-2">
-            <input
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.currentTarget.value)}
-              className="p-2.5 rounded-[10px] border border-[#ddd] text-[14px]"
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.currentTarget.value)}
-              className="p-2.5 rounded-[10px] border border-[#ddd] text-[14px]"
-            />
-            <button
-              onClick={signIn}
-              className="py-2 px-3 rounded-[10px] bg-[#2563eb] border border-[#2563eb] text-white font-bold"
-            >
-              Sign in
-            </button>
-          </div>
+        <div className="w-[360px] p-5 border border-[#e5e7eb] rounded-[12px] shadow bg-white">
+          {authMode === 'signin' ? (
+            <SignInView onSwitchMode={() => setAuthMode('signup')} />
+          ) : (
+            <SignUpView onSwitchMode={() => setAuthMode('signin')} />
+          )}
         </div>
       </div>
     );
