@@ -47,7 +47,7 @@ export function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
   }
 
   return (
-    <div className="w-[360px] flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <img
         src="/servota-logo.png"
         alt="Servota"
@@ -67,13 +67,13 @@ export function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
           placeholder="First name"
           value={firstName}
           onChange={(e) => setFirstName(e.currentTarget.value)}
-          className="border border-[#d1d5db] rounded-[12px] p-3 bg-white"
+          className="w-full box-border border border-[#d1d5db] rounded-[12px] p-3 bg-white"
         />
         <input
           placeholder="Last name"
           value={lastName}
           onChange={(e) => setLastName(e.currentTarget.value)}
-          className="border border-[#d1d5db] rounded-[12px] p-3 bg-white"
+          className="w-full box-border border border-[#d1d5db] rounded-[12px] p-3 bg-white"
         />
         <input
           type="email"
@@ -81,7 +81,7 @@ export function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.currentTarget.value)}
-          className="border border-[#d1d5db] rounded-[12px] p-3 bg-white"
+          className="w-full box-border border border-[#d1d5db] rounded-[12px] p-3 bg-white"
         />
         <input
           type="password"
@@ -89,7 +89,7 @@ export function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.currentTarget.value)}
-          className="border border-[#d1d5db] rounded-[12px] p-3 bg-white"
+          className="w-full box-border border border-[#d1d5db] rounded-[12px] p-3 bg-white"
         />
         <input
           type="password"
@@ -97,14 +97,14 @@ export function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
           autoComplete="new-password"
           value={confirm}
           onChange={(e) => setConfirm(e.currentTarget.value)}
-          className="border border-[#d1d5db] rounded-[12px] p-3 bg-white"
+          className="w-full box-border border border-[#d1d5db] rounded-[12px] p-3 bg-white"
         />
 
         {working ? (
           <button
             type="button"
             disabled
-            className="rounded-[12px] py-3 font-extrabold text-white bg-[#111] opacity-80"
+            className="w-full rounded-[12px] py-3 font-extrabold text-white bg-[#111] opacity-80"
           >
             Creating account…
           </button>
@@ -112,7 +112,7 @@ export function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
           <>
             <button
               type="submit"
-              className="rounded-[12px] py-3 font-extrabold text-white bg-[#111]"
+              className="w-full rounded-[12px] py-3 font-extrabold text-white bg-[#111]"
             >
               Sign up
             </button>
@@ -120,7 +120,7 @@ export function SignUpView({ onSwitchMode }: { onSwitchMode: () => void }) {
             <button
               type="button"
               onClick={onSwitchMode}
-              className="rounded-[12px] py-3 font-extrabold text-[#111] bg-[#eef1f5]"
+              className="w-full rounded-[12px] py-3 font-extrabold text-[#111] bg-[#eef1f5]"
             >
               Back to sign in
             </button>
