@@ -1,8 +1,10 @@
 // @ts-nocheck
 // deno-lint-ignore-file
-// supabase/functions/invite-member/index.ts
-// Sends an account invite email via Supabase Admin API after recording the invite in DB.
-// Requires secrets: PROJECT_URL, ANON_KEY, SERVICE_ROLE_KEY, APP_URL
+// Records an account invite via RPC, then emails an access link for EXISTING users only.
+// No new auth users are created. Clear messages are returned for UI.
+//
+// Env secrets required (set with `supabase secrets set`):
+//   PROJECT_URL, ANON_KEY, SERVICE_ROLE_KEY, APP_URL
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -17,17 +19,21 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405, headers: corsHeaders });
+    return new Response(JSON.stringify({ ok: false, message: 'Method not allowed' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    });
   }
 
   try {
     const authHeader = req.headers.get('Authorization') ?? '';
     const { accountId, email } = await req.json().catch(() => ({}));
+
     if (!accountId || !email) {
-      return new Response(JSON.stringify({ error: 'Missing accountId or email' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      });
+      return new Response(
+        JSON.stringify({ ok: false, code: 'bad-request', message: 'Missing accountId or email' }),
+        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      );
     }
 
     const PROJECT_URL = Deno.env.get('PROJECT_URL')!;
@@ -35,43 +41,71 @@ serve(async (req) => {
     const SERVICE_ROLE_KEY = Deno.env.get('SERVICE_ROLE_KEY')!;
     const APP_URL = Deno.env.get('APP_URL') ?? 'http://localhost:5173';
 
-    // 1) User-scoped client (enforces RLS/RPC permissions)
+    // 1) Record the invite in your DB (RLS enforced via caller’s JWT).
     const userClient = createClient(PROJECT_URL, ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
 
-    // Record the invite in DB via your existing RPC
     const { error: rpcErr } = await userClient.rpc('invite_account_member', {
       p_account_id: accountId,
       p_email: email,
     });
+
     if (rpcErr) {
-      return new Response(JSON.stringify({ error: rpcErr.message }), {
-        status: 400,
+      const msg = String(rpcErr.message || '');
+      // Normalize a common case for UX:
+      if (/already.*member/i.test(msg) || /duplicate/i.test(msg)) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            code: 'already-member',
+            message: 'User is already a member of this account.',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        );
+      }
+      return new Response(JSON.stringify({ ok: false, code: 'invite-failed', message: msg }), {
+        status: 200,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
 
-    // 2) Admin client sends the actual invite email using your configured SMTP (hello@)
-    const adminClient = createClient(PROJECT_URL, SERVICE_ROLE_KEY);
-    const { error: adminErr } = await adminClient.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${APP_URL}/auth/confirmed?invited=1`,
+    // 2) Email a login/continue link ONLY if the user already exists in Auth.
+    // Use signInWithOtp with shouldCreateUser:false so no new auth users are created.
+    const serverClient = createClient(PROJECT_URL, SERVICE_ROLE_KEY);
+    const { error: otpErr } = await serverClient.auth.signInWithOtp({
+      email,
+      shouldCreateUser: false,
+      options: { emailRedirectTo: `${APP_URL}/auth/confirmed?invited=1` },
     });
-    if (adminErr) {
-      return new Response(JSON.stringify({ error: adminErr.message }), {
-        status: 500,
+
+    if (otpErr) {
+      const msg = String(otpErr.message || '');
+      if (/not.*found/i.test(msg) || /user.*not.*found/i.test(msg)) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            code: 'user-not-found',
+            message: 'Cannot find a Servota user with this email.',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        );
+      }
+      // Any other OTP/mailer error:
+      return new Response(JSON.stringify({ ok: false, code: 'email-send-failed', message: msg }), {
+        status: 200,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
 
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders },
-    });
+    return new Response(
+      JSON.stringify({ ok: true, code: 'invited', message: 'Invitation email sent.' }),
+      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+    );
   } catch (e) {
-    return new Response(JSON.stringify({ error: String(e?.message ?? e) }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders },
-    });
+    return new Response(
+      JSON.stringify({ ok: false, code: 'server-error', message: String(e?.message ?? e) }),
+      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+    );
   }
 });
