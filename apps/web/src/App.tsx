@@ -14,6 +14,7 @@ import MyUnavailability from './member/MyUnavailability';
 import MyMemberships from './member/MyMemberships';
 import MyDetails from './member/MyDetails';
 import Home from './member/Home';
+import NotificationsPanel from './member/NotificationsPanel';
 
 import SignInView from './auth/SignInView';
 import SignUpView from './auth/SignUpView';
@@ -60,6 +61,10 @@ export default function App() {
   // policy (toggles Approvals tab)
   const [allowSwaps, setAllowSwaps] = useState(false);
   const [requireApproval, setRequireApproval] = useState(false);
+
+  // notifications panel + unread badge
+  const [showNotifs, setShowNotifs] = useState(false);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
 
   /* ---- bootstrap auth + saved context ---- */
   useEffect(() => {
@@ -108,6 +113,34 @@ export default function App() {
     localStorage.setItem(key, teamTab);
   }, [teamId, teamTab]);
 
+  /* ---- unread count: fetch on mount & poll ---- */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchUnread() {
+      try {
+        // cast to any because RPC types might lag schema
+        const { data, error } = await (supabase as any).rpc('unread_notification_count');
+        if (!cancelled) {
+          if (error) {
+            console.warn('unread_notification_count failed', error);
+          } else {
+            setUnreadCount(typeof data === 'number' ? data : 0);
+          }
+        }
+      } catch (e) {
+        if (!cancelled) console.warn('unread count error', e);
+      }
+    }
+
+    fetchUnread();
+    const id = setInterval(fetchUnread, 20000); // 20s light poll
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [supabase]);
+
   /* ------------ actions ------------ */
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -117,6 +150,21 @@ export default function App() {
     setAccountId(null);
     setTeamId(null);
     setView('home');
+  };
+
+  const openNotifications = () => {
+    setShowNotifs(true);
+  };
+
+  const closeNotifications = async () => {
+    setShowNotifs(false);
+    // refresh unread count on close so badge updates after marking
+    try {
+      const { data, error } = await (supabase as any).rpc('unread_notification_count');
+      if (!error) setUnreadCount(typeof data === 'number' ? data : 0);
+    } catch (err) {
+      console.warn('unread count refresh failed', err);
+    }
   };
 
   /* ------------ layout ------------ */
@@ -162,7 +210,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button className="sv-icon-btn" title="Notifications" aria-label="Notifications">
+            <button
+              className="sv-icon-btn relative"
+              title="Notifications"
+              aria-label="Notifications"
+              onClick={openNotifications}
+            >
+              {/* bell icon */}
               <svg
                 width="18"
                 height="18"
@@ -176,6 +230,16 @@ export default function App() {
                 <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" />
                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
               </svg>
+              {/* red badge */}
+              {unreadCount > 0 && (
+                <span
+                  className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-[4px] rounded-full bg-red-600 text-white text-[10px] leading-[16px] text-center font-bold"
+                  aria-label={`${unreadCount} unread notifications`}
+                  title={`${unreadCount} unread`}
+                >
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
             </button>
             <button className="sv-icon-btn-ghost" title="Profile" aria-label="Profile">
               <svg
@@ -335,6 +399,9 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* Notifications overlay (member-facing) */}
+      {showNotifs && <NotificationsPanel onClose={closeNotifications} />}
     </div>
   );
 }
