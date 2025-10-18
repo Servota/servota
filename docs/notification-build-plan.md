@@ -236,12 +236,12 @@ Planning → Provider Selection → Schema & RLS → Notify → Actions Gateway 
 
 ### Phase 2 — Edge: notify
 
-- [ ] Insert notifications, sign locator tokens, send templated emails per recipient
+- [x] Insert notifications, sign locator tokens, send templated emails per recipient
 
 ### Phase 3 — Edge: actions (HTML gateway)
 
-- [ ] Verify locator; mint action token; execute or prompt sign-in + confirm
-- [ ] Enforce single-use; attempt deep-link; provide browser fallback
+- [x] Verify locator; mint action token; execute or prompt sign-in + confirm
+- [x] Enforce single-use; attempt deep-link; provide browser fallback
 
 ### Phase 4 — PWA
 

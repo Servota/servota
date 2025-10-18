@@ -24,11 +24,20 @@ import MyUnavailability from './src/features/unavailability/MyUnavailability';
 import EventDetails, { type SelectedEvent } from './src/features/roster/EventDetails';
 import HomeAlerts from './src/features/home/HomeAlerts';
 import HomeSwapRequests from './src/features/home/HomeSwapRequests';
+import Notifications from './src/features/notifications/Notifications';
+import BellButton from './src/features/notifications/BellButton';
 
 import { initNotifications, registerPushToken } from './src/lib/notifications';
-import * as Notifications from 'expo-notifications';
+import * as NotificationsSDK from 'expo-notifications';
 
-type Screen = 'home' | 'memberships' | 'roster' | 'unavailability' | 'eventDetails' | 'details';
+type Screen =
+  | 'home'
+  | 'memberships'
+  | 'roster'
+  | 'unavailability'
+  | 'eventDetails'
+  | 'details'
+  | 'notifications';
 type AuthMode = 'signin' | 'signup';
 
 export default function App() {
@@ -45,7 +54,7 @@ export default function App() {
       setLoading(false);
     });
 
-    Notifications.getPermissionsAsync().then((p) => {
+    NotificationsSDK.getPermissionsAsync().then((p) => {
       console.log('[notif] Current notification status:', p);
     });
 
@@ -130,17 +139,20 @@ function AuthedApp() {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Header / Brand */}
-      <View style={styles.brandWrap}>
+      {/* Header / Brand + Bell */}
+      <View style={styles.brandBar}>
         <Image source={require('./assets/brand/servota-logo.png')} style={styles.brandLogo} />
+        <BellButton onPress={() => setScreen('notifications')} />
       </View>
 
       {/* Screens */}
       {screen === 'home' && (
         <View style={styles.homeWrap}>
+          {/* Keep these for now; can be removed later if the pane replaces them */}
           <HomeAlerts />
           <HomeSwapRequests />
 
+          {/* Cards */}
           <HomeCard
             image={require('./assets/home/memberships.png')}
             label="Memberships"
@@ -179,6 +191,8 @@ function AuthedApp() {
           <BackButton onPress={back} />
         </View>
       )}
+
+      {screen === 'notifications' && <Notifications onBack={back} />}
 
       {screen === 'memberships' && <MyMemberships />}
 
@@ -601,17 +615,16 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   container: { flex: 1, alignItems: 'stretch', justifyContent: 'center', padding: 20, gap: 12 },
 
-  brandWrap: {
-    alignItems: 'center',
+  brandBar: {
     paddingTop: 18,
     paddingBottom: 8,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 6,
   },
-  brandLogo: {
-    width: 320,
-    height: 96,
-    resizeMode: 'contain',
-  },
+  brandLogo: { width: 320, height: 96, resizeMode: 'contain' },
   authLogo: {
     width: 220,
     height: 70,
@@ -700,6 +713,7 @@ const styles = StyleSheet.create({
   secondaryText: { color: '#111', fontWeight: '800' },
 
   backBtn: {
+    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -720,11 +734,7 @@ const styles = StyleSheet.create({
     elevation: 0,
     shadowOpacity: 0,
   },
-  logoutText: {
-    fontWeight: '700',
-    color: '#111',
-    fontSize: 16,
-  },
+  logoutText: { fontWeight: '700', color: '#111', fontSize: 16 },
 });
 
 export {};
