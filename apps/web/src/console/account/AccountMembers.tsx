@@ -36,7 +36,7 @@ export default function AccountMembers({ accountId }: { accountId: string }) {
     text: '#111',
     muted: '#6b7280',
     chipBg: '#f3f4f6',
-    primary: '#111', // black buttons
+    primary: '#111',
     secondaryBg: '#eef1f5',
   };
 
@@ -45,7 +45,7 @@ export default function AccountMembers({ accountId }: { accountId: string }) {
     borderRadius: 14,
     background: colors.cardBg,
     overflow: 'hidden',
-    boxShadow: '0 3px 6px rgba(0,0,0,0.06)', // subtle like mobile shadows
+    boxShadow: '0 3px 6px rgba(0,0,0,0.06)',
   };
   const header: React.CSSProperties = {
     padding: 12,
@@ -158,17 +158,26 @@ export default function AccountMembers({ accountId }: { accountId: string }) {
 
   const invite = async () => {
     const email = inviteEmail.trim();
-    if (!email) return alert('Enter an email.');
+    if (!email) return alert('Enter an email address.');
     setInviting(true);
     try {
-      const { error } = await (supabase as any).rpc('invite_account_member', {
-        p_account_id: accountId,
-        p_email: email,
+      const { data, error } = await supabase.functions.invoke('invite-member', {
+        body: { accountId, email },
       });
-      if (error) throw error;
+
+      if (error) {
+        alert(error.message || 'Could not invite member');
+        return;
+      }
+
+      if (data?.ok) {
+        await load(); // reflect status = invited
+        alert(data?.message || 'Invitation email sent.');
+      } else {
+        alert(data?.message || 'Could not invite member');
+      }
+
       setInviteEmail('');
-      await load();
-      alert('Invitation recorded as Viewer. Email sending will be added later.');
     } catch (e: any) {
       alert(e?.message ?? 'Could not invite member');
     } finally {
@@ -212,7 +221,7 @@ export default function AccountMembers({ accountId }: { accountId: string }) {
           }}
         >
           <input
-            placeholder="Email (existing user)"
+            placeholder="Email address"
             value={inviteEmail}
             onChange={(e) => setInviteEmail(e.currentTarget.value)}
             style={input}
@@ -221,6 +230,7 @@ export default function AccountMembers({ accountId }: { accountId: string }) {
             style={{ ...btnPrimary, opacity: inviting ? 0.6 : 1 }}
             onClick={invite}
             disabled={inviting}
+            title={!canEdit ? 'Owner only' : undefined}
           >
             {inviting ? 'Inviting…' : 'Invite'}
           </button>

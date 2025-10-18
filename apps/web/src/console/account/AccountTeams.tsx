@@ -20,16 +20,15 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
 
-  /* ===== Styles (mirroring mobile look/feel) ===== */
+  /* ===== Neutral style system ===== */
   const colors = {
-    bg: '#fafafa',
     cardBg: '#fff',
     border: '#ececec',
     borderSoft: '#d1d5db',
     text: '#111',
     muted: '#6b7280',
     primary: '#111',
-    secondaryBg: '#eef1f5',
+    secondaryBg: '#f3f4f6',
   };
 
   const card: React.CSSProperties = {
@@ -45,7 +44,7 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
     fontWeight: 800,
     color: colors.text,
   };
-  const body: React.CSSProperties = { padding: 12, background: colors.cardBg };
+  const body: React.CSSProperties = { padding: 12 };
 
   const input: React.CSSProperties = {
     padding: '12px',
@@ -55,23 +54,19 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
     outline: 'none',
   };
   const btnBase: React.CSSProperties = {
-    padding: '10px 12px',
+    padding: '10px 14px',
     borderRadius: 12,
     border: `1px solid ${colors.border}`,
     cursor: 'pointer',
     fontWeight: 800,
+    background: colors.secondaryBg,
+    color: colors.text,
   };
   const btnPrimary: React.CSSProperties = {
     ...btnBase,
     background: colors.primary,
-    color: '#fff',
     border: `1px solid ${colors.primary}`,
-  };
-  const btnDanger: React.CSSProperties = {
-    ...btnBase,
-    border: '1px solid #ef4444',
-    color: '#ef4444',
-    background: '#fff',
+    color: '#fff',
   };
 
   const tableWrap: React.CSSProperties = { overflowX: 'auto' };
@@ -133,7 +128,6 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
         .single();
       if (insErr) throw insErr;
 
-      // auto-join creator quietly
       try {
         const me = (await supabase.auth.getUser()).data?.user?.id ?? null;
         if (me && inserted?.id) {
@@ -301,11 +295,7 @@ export default function AccountTeams({ accountId }: { accountId: string }) {
                             <button style={btnBase} onClick={() => beginRename(t)}>
                               Rename
                             </button>
-                            <button
-                              style={btnDanger}
-                              onClick={() => hardDelete(t.id)}
-                              title="Permanent delete (consider archiving instead)"
-                            >
+                            <button style={btnBase} onClick={() => hardDelete(t.id)}>
                               Delete
                             </button>
                           </div>
