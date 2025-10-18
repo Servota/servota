@@ -224,15 +224,15 @@ Planning → Provider Selection → Schema & RLS → Notify → Actions Gateway 
 
 ### Phase 0 — Bootstrap
 
-- [ ] Add this plan to `docs/notification-build-plan.md`
+- [x] Add this plan to `docs/notification-build-plan.md`
 - [ ] Choose email provider (Postmark or Resend)
 - [ ] Configure Edge secrets: `ACTION_SECRET`, `EMAIL_PROVIDER_API_KEY`, `EMAIL_FROM`, `APP_ORIGIN`, `PROJECT_URL` / `ANON_KEY` / `SERVICE_ROLE_KEY`
 
 ### Phase 1 — DB & RPCs
 
-- [ ] Create `notifications` and `action_tokens_used` with RLS
-- [ ] Ensure invite acceptance RPC exists (`invited → active`)
-- [ ] Stub swap accept/decline RPCs
+- [x] Create `notifications` and `action_tokens_used` with RLS
+- [x] Ensure invite acceptance RPC exists (`invited → active`)
+- [x] Stub swap accept/decline RPCs
 
 ### Phase 2 — Edge: notify
 
