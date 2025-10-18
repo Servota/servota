@@ -19,7 +19,7 @@ type NotificationRow = {
   body: string;
   data: Record<string, unknown> | null;
   channel: string;
-  status: string; // keep for compatibility; read state uses read_at
+  status: string; // legacy – read state uses read_at
   attempts: number;
   scheduled_at: string;
   sent_at: string | null;
@@ -28,7 +28,7 @@ type NotificationRow = {
   read_at?: string | null;
 };
 
-export default function Notifications({ onBack }: { onBack?: () => void }) {
+export default function Notifications() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [items, setItems] = useState<NotificationRow[]>([]);
@@ -44,7 +44,9 @@ export default function Notifications({ onBack }: { onBack?: () => void }) {
         p_since: null,
       });
       if (error) throw error;
-      setItems((data as NotificationRow[]) || []);
+      const rows: NotificationRow[] = (data as NotificationRow[]) || [];
+      // Show unread first: filter out read items for a clean view
+      setItems(rows.filter((n) => !n.read_at));
     } catch (e: any) {
       setError(String(e?.message ?? e));
     } finally {
@@ -62,11 +64,10 @@ export default function Notifications({ onBack }: { onBack?: () => void }) {
     setMarking(id);
     const { data, error } = await (supabase as any).rpc('mark_notification_read', { p_id: id });
     if (!error && data === true) {
-      setItems((prev) =>
-        prev.map((n) =>
-          n.id === id ? { ...n, status: 'read', read_at: new Date().toISOString() } : n
-        )
-      );
+      // Immediately remove from the list (unread-only UX)
+      setItems((prev) => prev.filter((n) => n.id !== id));
+    } else if (error) {
+      console.warn('mark_notification_read failed', error);
     }
     setMarking(null);
   }
@@ -99,7 +100,7 @@ export default function Notifications({ onBack }: { onBack?: () => void }) {
     <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }}>
       <View style={styles.card}>
         <Text style={styles.h1}>Notifications</Text>
-        <Text style={styles.meta}>Your latest alerts and actions.</Text>
+        <Text style={styles.meta}>Unread alerts and actions.</Text>
       </View>
 
       <FlatList
@@ -107,12 +108,10 @@ export default function Notifications({ onBack }: { onBack?: () => void }) {
         data={items}
         keyExtractor={(n) => n.id}
         renderItem={({ item }) => (
-          <View style={[styles.item, item.read_at ? { opacity: 0.7 } : null]}>
+          <View style={styles.item}>
             <View style={{ flex: 1, paddingRight: 10 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View
-                  style={[styles.dot, { backgroundColor: item.read_at ? '#d1d5db' : '#0ea5e9' }]}
-                />
+                <View style={[styles.dot, { backgroundColor: '#0ea5e9' }]} />
                 <Text numberOfLines={1} style={styles.title}>
                   {item.title}
                 </Text>
@@ -124,39 +123,29 @@ export default function Notifications({ onBack }: { onBack?: () => void }) {
               <Text style={styles.meta}>Created: {new Date(item.created_at).toLocaleString()}</Text>
             </View>
 
-            {item.read_at ? (
-              <Text style={styles.meta}>Read</Text>
-            ) : (
-              <Pressable
-                onPress={() => markRead(item.id)}
-                disabled={marking === item.id}
-                style={[styles.secondaryBtn, marking === item.id && { opacity: 0.6 }]}
-                android_ripple={{ color: '#e5e7eb' }}
-              >
-                <Text style={styles.secondaryText}>
-                  {marking === item.id ? 'Marking…' : 'Mark read'}
-                </Text>
-              </Pressable>
-            )}
+            <Pressable
+              onPress={() => markRead(item.id)}
+              disabled={marking === item.id}
+              style={[styles.secondaryBtn, marking === item.id && { opacity: 0.6 }]}
+              android_ripple={{ color: '#e5e7eb' }}
+            >
+              <Text style={styles.secondaryText}>
+                {marking === item.id ? 'Marking…' : 'Mark read'}
+              </Text>
+            </Pressable>
           </View>
         )}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        ListEmptyComponent={<Text style={styles.meta}>You have no notifications yet.</Text>}
+        ListEmptyComponent={<Text style={styles.meta}>No unread notifications.</Text>}
       />
-
-      {onBack ? (
-        <Pressable onPress={onBack} style={styles.backBtn} android_ripple={{ color: '#e5e7eb' }}>
-          <Text style={styles.backIcon}>{'<'}</Text>
-          <Text style={styles.backText}>Back</Text>
-        </Pressable>
-      ) : null}
+      {/* No bottom back button — you already have a top back control */}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16 },
-  muted: { color: '#6b7280', textAlign: 'center' }, // ← added
+  muted: { color: '#6b7280', textAlign: 'center' },
   error: { color: '#b91c1c', textAlign: 'center' },
   card: {
     borderWidth: 1,
@@ -206,17 +195,4 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   secondaryText: { color: '#111', fontWeight: '800' },
-  backBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: '#f3f4f6',
-  },
-  backIcon: { fontSize: 16, color: '#111' },
-  backText: { fontWeight: '700', color: '#111' },
 });
