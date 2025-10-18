@@ -192,7 +192,7 @@ function AuthedApp() {
         </View>
       )}
 
-      {screen === 'notifications' && <Notifications onBack={back} />}
+      {screen === 'notifications' && <Notifications />}
 
       {screen === 'memberships' && <MyMemberships />}
 
