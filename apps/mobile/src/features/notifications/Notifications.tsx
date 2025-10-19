@@ -100,7 +100,6 @@ export default function Notifications() {
 
   /* ---------- Replacement helpers ---------- */
   function isReplacementRequest(n: NotificationRow): boolean {
-    // Actionable replacement request sent to eligible team members
     const d = (n.data || {}) as any;
     const hasId = d?.replacement_request_id || d?.request_id || d?.p_replacement_request_id;
     return /replacement/i.test(n.type || '') && !!hasId && !/claimed|filled/i.test(n.type);
@@ -110,7 +109,6 @@ export default function Notifications() {
     return d?.replacement_request_id || d?.request_id || d?.p_replacement_request_id || null;
   }
   function isReplacementOutcome(n: NotificationRow): boolean {
-    // Informational follow-ups
     return /^replacement_(claimed|filled)$/i.test(n.type);
   }
   // chip for read original replacement request (ignored/claimed)
@@ -151,15 +149,19 @@ export default function Notifications() {
               if (error) throw error;
             }
 
-            // mark original request read + tag outcome (kept in read list)
-            await markRead(n.id);
+            // Persist outcome on server (so chip survives refresh), and keep it visible briefly
+            await (supabase as any).rpc('mark_notification_outcome', {
+              p_id: n.id,
+              p_outcome: action === 'accept' ? 'accept' : 'decline',
+            });
+
             setItems((prev) =>
               prev.map((m) =>
                 m.id === n.id
                   ? {
                       ...m,
                       read_at: new Date().toISOString(),
-                      data: { ...(m.data || {}), outcome: 'claim', __justActed: true },
+                      data: { ...(m.data || {}), outcome: action, __justActed: true },
                     }
                   : m
               )
@@ -186,7 +188,6 @@ export default function Notifications() {
     try {
       setWorkingId(n.id);
 
-      // we need claimant id for fn_claim_replacement; pull from auth
       const u = await supabase.auth.getUser();
       const me = u.data?.user?.id;
       if (!me) throw new Error('Not signed in');
@@ -197,7 +198,7 @@ export default function Notifications() {
       });
       if (error) {
         const msg = String(error.message || '');
-        if (/already.*filled|already.*claimed/i.test(msg)) {
+        if (/already.*filled|already.*closed/i.test(msg)) {
           Alert.alert(
             'Already filled',
             'Thanks for putting your hand up, but this one has already been claimed.'
@@ -207,15 +208,20 @@ export default function Notifications() {
         }
       } else {
         Alert.alert('Claimed!', 'You have been assigned to this event.');
-        // mark original request read + tag outcome = claim
-        await markRead(n.id);
+
+        // Persist outcome on server and show chip now
+        await (supabase as any).rpc('mark_notification_outcome', {
+          p_id: n.id,
+          p_outcome: 'claim',
+        });
+
         setItems((prev) =>
           prev.map((m) =>
             m.id === n.id
               ? {
                   ...m,
                   read_at: new Date().toISOString(),
-                  data: { ...(m.data || {}), outcome: 'claim' },
+                  data: { ...(m.data || {}), outcome: 'claim', __justActed: true },
                 }
               : m
           )
@@ -229,8 +235,12 @@ export default function Notifications() {
   }
 
   async function ignoreReplacement(n: NotificationRow) {
-    // soft-dismiss: mark as read + tag outcome = ignore
-    await markRead(n.id);
+    // Persist ignore outcome and show chip now
+    await (supabase as any).rpc('mark_notification_outcome', {
+      p_id: n.id,
+      p_outcome: 'ignore',
+    });
+
     setItems((prev) =>
       prev.map((m) =>
         m.id === n.id
@@ -256,6 +266,7 @@ export default function Notifications() {
     load();
   }, [load]);
 
+  // Keep just-acted read items visible in Unread until next refresh
   const visible = showRead
     ? items
     : items.filter((n) => {
@@ -311,12 +322,9 @@ export default function Notifications() {
           const isReplReq = isReplacementRequest(item);
           const isReplOut = isReplacementOutcome(item);
 
-          // swap request chip (on read)
           const swapChip = swapRequestOutcomeChip(item);
-          // replacement request chip (on read)
           const replChip = replacementRequestOutcomeChip(item);
 
-          // outcome text for informational cards
           const actor = data?.actor_name || 'member';
           const outcomeText =
             isSwapOut && item.type === 'swap_accepted'
@@ -328,6 +336,21 @@ export default function Notifications() {
                   : isReplOut && item.type === 'replacement_filled'
                     ? `Your replacement request has been filled.`
                     : null;
+
+          // Normalised header title per card type
+          const headerTitle = isSwapReq
+            ? 'Swap Request'
+            : isSwapOut
+              ? item.type === 'swap_accepted'
+                ? 'Swap Accepted'
+                : 'Swap Declined'
+              : isReplReq
+                ? 'Replacement Request'
+                : isReplOut
+                  ? item.type === 'replacement_claimed'
+                    ? 'Replacement Claimed'
+                    : 'Replacement Filled'
+                  : item.title;
 
           return (
             <View style={[styles.item, item.read_at ? { opacity: 0.7 } : null]}>
@@ -342,7 +365,7 @@ export default function Notifications() {
                     style={[styles.dot, { backgroundColor: item.read_at ? '#d1d5db' : '#0ea5e9' }]}
                   />
                   <Text numberOfLines={1} style={styles.title}>
-                    {isSwapReq ? 'Swap Request' : isReplReq ? 'Replacement Request' : item.title}
+                    {headerTitle}
                   </Text>
                 </View>
 
@@ -362,7 +385,6 @@ export default function Notifications() {
                 ) : isReplReq ? (
                   <>
                     <Text style={styles.body}>{item.title}</Text>
-                    {/* optional: show event/date if provided */}
                     {data?.event_date && (
                       <Text style={styles.meta}>Date: {formatDate(data?.event_date)}</Text>
                     )}
@@ -525,7 +547,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   acceptText: { color: '#fff', fontWeight: '800' },
-
   declineBtn: {
     backgroundColor: '#ef4444',
     paddingHorizontal: 12,
