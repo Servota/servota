@@ -77,15 +77,22 @@ export default function Notifications() {
   }
 
   // swap helpers
-  function isSwap(n: NotificationRow): boolean {
-    return /swap/i.test(n.type || '') && !!getSwapRequestId(n);
+  function isSwapRequest(n: NotificationRow): boolean {
+    // actionable request card (has request_id and 'swap' in type)
+    const d = (n.data || {}) as any;
+    const hasReq = d?.request_id || d?.swap_request_id || d?.p_request_id;
+    return /swap/i.test(n.type || '') && !!hasReq && /^swap_requested$/i.test(n.type);
   }
   function getSwapRequestId(n: NotificationRow): string | null {
     const d = (n.data || {}) as any;
     return d?.request_id || d?.swap_request_id || d?.p_request_id || null;
   }
+  function isOutcomeCard(n: NotificationRow): boolean {
+    // informational follow-ups sent to the requester
+    return /^swap_accepted$/i.test(n.type) || /^swap_declined$/i.test(n.type);
+  }
 
-  // Accept/Decline for swap requests — Accept uses atomic RPC; Decline responds only
+  // Accept/Decline for swap requests — Accept uses atomic RPC; Decline responds only.
   async function respondSwap(n: NotificationRow, action: 'accept' | 'decline') {
     const reqId = getSwapRequestId(n);
     if (!reqId) return;
@@ -114,9 +121,20 @@ export default function Notifications() {
               if (error) throw error;
             }
 
-            // mark read & remove (in unread view)
+            // Mark the original request card as read and tag outcome, but DO NOT remove it.
+            // It will fall out of Unread and be visible under "Show read".
             await markRead(n.id);
-            setItems((prev) => prev.filter((x) => x.id !== n.id));
+            setItems((prev) =>
+              prev.map((m) =>
+                m.id === n.id
+                  ? {
+                      ...m,
+                      read_at: new Date().toISOString(),
+                      data: { ...(m.data || {}), outcome: action }, // store what happened
+                    }
+                  : m
+              )
+            );
 
             if (action === 'accept') {
               Alert.alert('Swapped!', 'The swap has been accepted and applied.');
@@ -139,11 +157,13 @@ export default function Notifications() {
     return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   }
 
-  // outcome chip text (for read cards)
-  function outcomeLabel(n: NotificationRow): string | null {
+  // chip: only for the original swap request (when read) using data.outcome
+  function requestOutcomeChip(n: NotificationRow): string | null {
     if (!n.read_at) return null;
-    if (/^swap_accepted$/i.test(n.type)) return 'Accepted';
-    if (/^swap_declined$/i.test(n.type)) return 'Declined';
+    if (!isSwapRequest(n)) return null;
+    const outcome = ((n.data || {}) as any)?.outcome;
+    if (outcome === 'accept') return 'Accepted';
+    if (outcome === 'decline') return 'Declined';
     return null;
   }
 
@@ -193,13 +213,12 @@ export default function Notifications() {
         data={visible}
         keyExtractor={(n) => n.id}
         renderItem={({ item }) => {
-          const swap = isSwap(item);
+          const isReq = isSwapRequest(item);
+          const isOutcome = isOutcomeCard(item);
           const data = (item.data || {}) as any;
-          const chip = outcomeLabel(item);
-          const isOutcome =
-            /^swap_accepted$/i.test(item.type) || /^swap_declined$/i.test(item.type);
+          const chip = requestOutcomeChip(item);
 
-          // message line for accepted/declined
+          // message line for informational outcome cards
           const actor = data?.actor_name || 'member';
           const outcomeText =
             item.type === 'swap_accepted'
@@ -210,23 +229,24 @@ export default function Notifications() {
 
           return (
             <View style={[styles.item, item.read_at ? { opacity: 0.7 } : null]}>
+              {/* CHiP only on original request (when read) */}
               {chip && <Text style={styles.statusChip}>{chip}</Text>}
 
               <View style={{ flex: 1, paddingRight: 10 }}>
-                {/* Title row */}
+                {/* Title row with unread dot */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <View
                     style={[styles.dot, { backgroundColor: item.read_at ? '#d1d5db' : '#0ea5e9' }]}
                   />
                   <Text numberOfLines={1} style={styles.title}>
-                    {swap ? 'Swap Request' : item.title}
+                    {isReq ? 'Swap Request' : item.title}
                   </Text>
                 </View>
 
-                {/* Outcome message */}
+                {/* Body */}
                 {isOutcome && outcomeText ? (
                   <Text style={[styles.body, { marginTop: 6 }]}>{outcomeText}</Text>
-                ) : swap ? (
+                ) : isReq ? (
                   <>
                     <Text style={styles.body}>{item.title}</Text>
                     <Text style={styles.meta}>Theirs: {formatDate(data?.from_date)}</Text>
@@ -240,8 +260,8 @@ export default function Notifications() {
                 )}
               </View>
 
-              {/* Only show buttons on actionable swap_requested */}
-              {!item.read_at && swap && !isOutcome && (
+              {/* Actions */}
+              {!item.read_at && isReq && (
                 <View style={{ gap: 6 }}>
                   <Pressable
                     onPress={() => respondSwap(item, 'accept')}
@@ -264,8 +284,8 @@ export default function Notifications() {
                 </View>
               )}
 
-              {/* Mark read on general + outcome notifications (not on actionable swap request) */}
-              {!item.read_at && (!swap || isOutcome) && (
+              {/* Mark read on informational & general (i.e., not actionable request) */}
+              {!item.read_at && !isReq && (
                 <Pressable
                   onPress={() => markRead(item.id)}
                   disabled={marking === item.id}
@@ -327,7 +347,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: '700', color: '#111', flexShrink: 1 },
   body: { fontSize: 13, color: '#111', marginTop: 4 },
 
-  // tiny status chip for read outcomes
+  // chip for read original request only
   statusChip: {
     position: 'absolute',
     top: 8,
