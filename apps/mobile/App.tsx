@@ -22,8 +22,6 @@ import MyMemberships from './src/features/memberships/MyMemberships';
 import MyRoster from './src/features/roster/MyRoster';
 import MyUnavailability from './src/features/unavailability/MyUnavailability';
 import EventDetails, { type SelectedEvent } from './src/features/roster/EventDetails';
-import HomeAlerts from './src/features/home/HomeAlerts';
-import HomeSwapRequests from './src/features/home/HomeSwapRequests';
 import Notifications from './src/features/notifications/Notifications';
 import BellButton from './src/features/notifications/BellButton';
 
@@ -148,10 +146,6 @@ function AuthedApp() {
       {/* Screens */}
       {screen === 'home' && (
         <View style={styles.homeWrap}>
-          {/* Keep these for now; can be removed later if the pane replaces them */}
-          <HomeAlerts />
-          <HomeSwapRequests />
-
           {/* Cards */}
           <HomeCard
             image={require('./assets/home/memberships.png')}

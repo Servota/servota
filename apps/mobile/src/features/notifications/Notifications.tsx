@@ -36,7 +36,7 @@ export default function Notifications() {
   const [items, setItems] = useState<NotificationRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [marking, setMarking] = useState<string | null>(null);
-  const [workingId, setWorkingId] = useState<string | null>(null); // for accept/decline
+  const [workingId, setWorkingId] = useState<string | null>(null);
   const [showRead, setShowRead] = useState(false);
 
   const load = useCallback(async () => {
@@ -76,23 +76,53 @@ export default function Notifications() {
     setMarking(null);
   }
 
-  // swap helpers
+  /* ---------- Swap helpers ---------- */
   function isSwapRequest(n: NotificationRow): boolean {
-    // actionable request card (has request_id and 'swap' in type)
     const d = (n.data || {}) as any;
     const hasReq = d?.request_id || d?.swap_request_id || d?.p_request_id;
-    return /swap/i.test(n.type || '') && !!hasReq && /^swap_requested$/i.test(n.type);
+    return /^swap_requested$/i.test(n.type) && !!hasReq;
   }
   function getSwapRequestId(n: NotificationRow): string | null {
     const d = (n.data || {}) as any;
     return d?.request_id || d?.swap_request_id || d?.p_request_id || null;
   }
-  function isOutcomeCard(n: NotificationRow): boolean {
-    // informational follow-ups sent to the requester
+  function isSwapOutcome(n: NotificationRow): boolean {
     return /^swap_accepted$/i.test(n.type) || /^swap_declined$/i.test(n.type);
   }
+  // chip for read original swap request only
+  function swapRequestOutcomeChip(n: NotificationRow): string | null {
+    if (!n.read_at || !isSwapRequest(n)) return null;
+    const outcome = ((n.data || {}) as any)?.outcome;
+    if (outcome === 'accept') return 'Accepted';
+    if (outcome === 'decline') return 'Declined';
+    return null;
+  }
 
-  // Accept/Decline for swap requests — Accept uses atomic RPC; Decline responds only.
+  /* ---------- Replacement helpers ---------- */
+  function isReplacementRequest(n: NotificationRow): boolean {
+    // Actionable replacement request sent to eligible team members
+    const d = (n.data || {}) as any;
+    const hasId = d?.replacement_request_id || d?.request_id || d?.p_replacement_request_id;
+    return /replacement/i.test(n.type || '') && !!hasId && !/claimed|filled/i.test(n.type);
+  }
+  function getReplacementRequestId(n: NotificationRow): string | null {
+    const d = (n.data || {}) as any;
+    return d?.replacement_request_id || d?.request_id || d?.p_replacement_request_id || null;
+  }
+  function isReplacementOutcome(n: NotificationRow): boolean {
+    // Informational follow-ups
+    return /^replacement_(claimed|filled)$/i.test(n.type);
+  }
+  // chip for read original replacement request (ignored/claimed)
+  function replacementRequestOutcomeChip(n: NotificationRow): string | null {
+    if (!n.read_at || !isReplacementRequest(n)) return null;
+    const outcome = ((n.data || {}) as any)?.outcome;
+    if (outcome === 'claim') return 'Claimed';
+    if (outcome === 'ignore') return 'Ignored';
+    return null;
+  }
+
+  /* ---------- Swap actions ---------- */
   async function respondSwap(n: NotificationRow, action: 'accept' | 'decline') {
     const reqId = getSwapRequestId(n);
     if (!reqId) return;
@@ -121,8 +151,7 @@ export default function Notifications() {
               if (error) throw error;
             }
 
-            // Mark the original request card as read and tag outcome, but DO NOT remove it.
-            // It will fall out of Unread and be visible under "Show read".
+            // mark original request read + tag outcome (kept in read list)
             await markRead(n.id);
             setItems((prev) =>
               prev.map((m) =>
@@ -130,7 +159,7 @@ export default function Notifications() {
                   ? {
                       ...m,
                       read_at: new Date().toISOString(),
-                      data: { ...(m.data || {}), outcome: action }, // store what happened
+                      data: { ...(m.data || {}), outcome: 'claim', __justActed: true },
                     }
                   : m
               )
@@ -149,7 +178,73 @@ export default function Notifications() {
     ]);
   }
 
-  // date pretty-print
+  /* ---------- Replacement actions ---------- */
+  async function claimReplacement(n: NotificationRow) {
+    const reqId = getReplacementRequestId(n);
+    if (!reqId) return;
+
+    try {
+      setWorkingId(n.id);
+
+      // we need claimant id for fn_claim_replacement; pull from auth
+      const u = await supabase.auth.getUser();
+      const me = u.data?.user?.id;
+      if (!me) throw new Error('Not signed in');
+
+      const { error } = await (supabase as any).rpc('fn_claim_replacement', {
+        p_replacement_request_id: reqId,
+        p_claimant_user_id: me,
+      });
+      if (error) {
+        const msg = String(error.message || '');
+        if (/already.*filled|already.*claimed/i.test(msg)) {
+          Alert.alert(
+            'Already filled',
+            'Thanks for putting your hand up, but this one has already been claimed.'
+          );
+        } else {
+          throw error;
+        }
+      } else {
+        Alert.alert('Claimed!', 'You have been assigned to this event.');
+        // mark original request read + tag outcome = claim
+        await markRead(n.id);
+        setItems((prev) =>
+          prev.map((m) =>
+            m.id === n.id
+              ? {
+                  ...m,
+                  read_at: new Date().toISOString(),
+                  data: { ...(m.data || {}), outcome: 'claim' },
+                }
+              : m
+          )
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Failed', String(e?.message ?? 'Please try again.'));
+    } finally {
+      setWorkingId(null);
+    }
+  }
+
+  async function ignoreReplacement(n: NotificationRow) {
+    // soft-dismiss: mark as read + tag outcome = ignore
+    await markRead(n.id);
+    setItems((prev) =>
+      prev.map((m) =>
+        m.id === n.id
+          ? {
+              ...m,
+              read_at: new Date().toISOString(),
+              data: { ...(m.data || {}), outcome: 'ignore', __justActed: true },
+            }
+          : m
+      )
+    );
+  }
+
+  /* ---------- shared ---------- */
   function formatDate(d: unknown) {
     if (!d) return '—';
     const date = new Date(String(d));
@@ -157,21 +252,16 @@ export default function Notifications() {
     return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   }
 
-  // chip: only for the original swap request (when read) using data.outcome
-  function requestOutcomeChip(n: NotificationRow): string | null {
-    if (!n.read_at) return null;
-    if (!isSwapRequest(n)) return null;
-    const outcome = ((n.data || {}) as any)?.outcome;
-    if (outcome === 'accept') return 'Accepted';
-    if (outcome === 'decline') return 'Declined';
-    return null;
-  }
-
   useEffect(() => {
     load();
   }, [load]);
 
-  const visible = showRead ? items : items.filter((n) => !n.read_at);
+  const visible = showRead
+    ? items
+    : items.filter((n) => {
+        const d = (n.data || {}) as any;
+        return !n.read_at || d?.__justActed === true;
+      });
 
   if (loading) {
     return (
@@ -213,44 +303,69 @@ export default function Notifications() {
         data={visible}
         keyExtractor={(n) => n.id}
         renderItem={({ item }) => {
-          const isReq = isSwapRequest(item);
-          const isOutcome = isOutcomeCard(item);
           const data = (item.data || {}) as any;
-          const chip = requestOutcomeChip(item);
 
-          // message line for informational outcome cards
+          const isSwapReq = isSwapRequest(item);
+          const isSwapOut = isSwapOutcome(item);
+
+          const isReplReq = isReplacementRequest(item);
+          const isReplOut = isReplacementOutcome(item);
+
+          // swap request chip (on read)
+          const swapChip = swapRequestOutcomeChip(item);
+          // replacement request chip (on read)
+          const replChip = replacementRequestOutcomeChip(item);
+
+          // outcome text for informational cards
           const actor = data?.actor_name || 'member';
           const outcomeText =
-            item.type === 'swap_accepted'
+            isSwapOut && item.type === 'swap_accepted'
               ? `Your swap request has been accepted by ${actor}.`
-              : item.type === 'swap_declined'
+              : isSwapOut && item.type === 'swap_declined'
                 ? `Your swap request has been declined by ${actor}.`
-                : null;
+                : isReplOut && item.type === 'replacement_claimed'
+                  ? `${actor} has claimed your replacement request.`
+                  : isReplOut && item.type === 'replacement_filled'
+                    ? `Your replacement request has been filled.`
+                    : null;
 
           return (
             <View style={[styles.item, item.read_at ? { opacity: 0.7 } : null]}>
-              {/* CHiP only on original request (when read) */}
-              {chip && <Text style={styles.statusChip}>{chip}</Text>}
+              {/* chips: only on original request cards after read */}
+              {swapChip && <Text style={styles.statusChip}>{swapChip}</Text>}
+              {replChip && <Text style={styles.statusChip}>{replChip}</Text>}
 
               <View style={{ flex: 1, paddingRight: 10 }}>
-                {/* Title row with unread dot */}
+                {/* Title row */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <View
                     style={[styles.dot, { backgroundColor: item.read_at ? '#d1d5db' : '#0ea5e9' }]}
                   />
                   <Text numberOfLines={1} style={styles.title}>
-                    {isReq ? 'Swap Request' : item.title}
+                    {isSwapReq ? 'Swap Request' : isReplReq ? 'Replacement Request' : item.title}
                   </Text>
                 </View>
 
                 {/* Body */}
-                {isOutcome && outcomeText ? (
-                  <Text style={[styles.body, { marginTop: 6 }]}>{outcomeText}</Text>
-                ) : isReq ? (
+                {isSwapOut || isReplOut ? (
+                  <>
+                    {outcomeText ? (
+                      <Text style={[styles.body, { marginTop: 6 }]}>{outcomeText}</Text>
+                    ) : null}
+                  </>
+                ) : isSwapReq ? (
                   <>
                     <Text style={styles.body}>{item.title}</Text>
                     <Text style={styles.meta}>Theirs: {formatDate(data?.from_date)}</Text>
                     <Text style={styles.meta}>Yours: {formatDate(data?.to_date)}</Text>
+                  </>
+                ) : isReplReq ? (
+                  <>
+                    <Text style={styles.body}>{item.title}</Text>
+                    {/* optional: show event/date if provided */}
+                    {data?.event_date && (
+                      <Text style={styles.meta}>Date: {formatDate(data?.event_date)}</Text>
+                    )}
                   </>
                 ) : (
                   <>
@@ -261,7 +376,7 @@ export default function Notifications() {
               </View>
 
               {/* Actions */}
-              {!item.read_at && isReq && (
+              {!item.read_at && isSwapReq && (
                 <View style={{ gap: 6 }}>
                   <Pressable
                     onPress={() => respondSwap(item, 'accept')}
@@ -284,8 +399,31 @@ export default function Notifications() {
                 </View>
               )}
 
-              {/* Mark read on informational & general (i.e., not actionable request) */}
-              {!item.read_at && !isReq && (
+              {!item.read_at && isReplReq && (
+                <View style={{ gap: 6 }}>
+                  <Pressable
+                    onPress={() => claimReplacement(item)}
+                    disabled={workingId === item.id}
+                    style={[styles.acceptBtn, workingId === item.id && { opacity: 0.6 }]}
+                    android_ripple={{ color: '#166534' }}
+                  >
+                    <Text style={styles.acceptText}>
+                      {workingId === item.id ? 'Working…' : 'Claim'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => ignoreReplacement(item)}
+                    disabled={workingId === item.id}
+                    style={[styles.ignoreBtn, workingId === item.id && { opacity: 0.6 }]}
+                    android_ripple={{ color: '#e5e7eb' }}
+                  >
+                    <Text style={styles.ignoreText}>Ignore</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              {/* Mark read on informational & general */}
+              {!item.read_at && !isSwapReq && !isReplReq && (
                 <Pressable
                   onPress={() => markRead(item.id)}
                   disabled={marking === item.id}
@@ -387,6 +525,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   acceptText: { color: '#fff', fontWeight: '800' },
+
   declineBtn: {
     backgroundColor: '#ef4444',
     paddingHorizontal: 12,
@@ -396,4 +535,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   declineText: { color: '#fff', fontWeight: '800' },
+
+  ignoreBtn: {
+    backgroundColor: '#eef1f5',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    minWidth: 92,
+    alignItems: 'center',
+  },
+  ignoreText: { color: '#111', fontWeight: '800' },
 });
