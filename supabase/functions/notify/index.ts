@@ -250,7 +250,8 @@ serve(async (req) => {
           status: 'queued',
           account_id: i.account_id ?? null,
           team_id: i.team_id ?? null,
-          scheduled_at: i.scheduled_at ?? null,
+          // If caller didn't specify, default to "now" so NOT NULL passes and ordering works
+          scheduled_at: i.scheduled_at ?? new Date().toISOString(),
         }))
       )
       .select();
