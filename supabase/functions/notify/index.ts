@@ -1,5 +1,6 @@
 // @ts-nocheck
 // Servota notify (V1 info-only) — inserts notifications and sends branded info emails via Resend
+// Now reads file-based templates from ../_shared/email/*.html with a safe inline fallback.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -20,6 +21,28 @@ function fmt(dt?: string | number | Date) {
   }
 }
 
+/** -------- Template loading & rendering (file-based) -------- */
+async function loadTemplate(name: string): Promise<string | null> {
+  try {
+    // Try shared folder path (repo: supabase/functions/_shared/email/*.html)
+    const sharedUrl = new URL(`../_shared/email/${name}.html`, import.meta.url);
+    return await Deno.readTextFile(sharedUrl);
+  } catch {
+    try {
+      // Fallback: allow local folder (if someone later copies templates under notify/email)
+      const localUrl = new URL(`./email/${name}.html`, import.meta.url);
+      return await Deno.readTextFile(localUrl);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function renderTemplate(tpl: string, ctx: Record<string, string>) {
+  return tpl.replace(/\{\{(\w+)\}\}/g, (_m, k) => ctx[k] ?? '');
+}
+
+/** -------- Minimal inline fallback (used only if file missing) -------- */
 function htmlShell(content: string) {
   return `<!doctype html>
 <html>
@@ -36,7 +59,7 @@ function htmlShell(content: string) {
 </html>`;
 }
 
-function renderInfoEmail(row: any) {
+function renderInfoEmailFallback(row: any) {
   const t = row?.type ?? '';
   const d = row?.data ?? {};
   const title = row?.title ?? 'Servota update';
@@ -52,7 +75,6 @@ function renderInfoEmail(row: any) {
       <p style="margin:0 0 12px">Yours: ${toDate}</p>
     `);
   }
-
   if (t === 'swap_accepted') {
     const actor = d?.actor_name ?? 'A team member';
     const when = fmt(d?.event_date);
@@ -62,7 +84,6 @@ function renderInfoEmail(row: any) {
       <p style="margin:0 0 12px">${actor} accepted your swap${when ? ` for ${when}` : ''}.</p>
     `);
   }
-
   if (t === 'swap_declined') {
     const actor = d?.actor_name ?? 'A team member';
     return htmlShell(`
@@ -71,7 +92,6 @@ function renderInfoEmail(row: any) {
       <p style="margin:0 0 12px">${actor} declined your swap request.</p>
     `);
   }
-
   if (t === 'replacement_opened') {
     const evTitle = d?.event_title ?? title;
     const when = fmt(d?.event_date);
@@ -82,7 +102,6 @@ function renderInfoEmail(row: any) {
       <p style="margin:0">From ${actor}</p>
     `);
   }
-
   if (t === 'replacement_claimed') {
     const evTitle = d?.event_title ?? title;
     const when = fmt(d?.event_date);
@@ -93,7 +112,6 @@ function renderInfoEmail(row: any) {
       <p style="margin:0 0 12px">${actor} has claimed your replacement request.</p>
     `);
   }
-
   if (t === 'invite_account') {
     const accountName = d?.account_name ?? '';
     return htmlShell(`
@@ -101,7 +119,6 @@ function renderInfoEmail(row: any) {
       <p style="margin:0">Join <strong>${accountName}</strong> on Servota.</p>
     `);
   }
-
   if (t === 'invite_team') {
     const accountName = d?.account_name ?? '';
     const teamName = d?.team_name ?? '';
@@ -110,13 +127,89 @@ function renderInfoEmail(row: any) {
       <p style="margin:0">You’ve been invited to join the <strong>${teamName}</strong> team at <strong>${accountName}</strong>.</p>
     `);
   }
-
-  // fallback generic
   const body = row?.body ?? 'You have a new update.';
   return htmlShell(`
     <h2 style="margin:0 0 8px">${title}</h2>
     <p style="margin:0 0 12px">${body}</p>
   `);
+}
+
+/** Map notification row → template name + context keys */
+function templateMap(row: any): { name: string; ctx: Record<string, string>; subject: string } {
+  const type = row?.type ?? '';
+  const d = row?.data ?? {};
+  const title = row?.title ?? 'Servota update';
+
+  switch (type) {
+    case 'swap_requested':
+      return {
+        name: 'swap_requested',
+        subject: title,
+        ctx: {
+          to_label: d?.to_label ?? title,
+          from_date: fmt(d?.from_date),
+          to_date: fmt(d?.to_date),
+        },
+      };
+    case 'swap_accepted':
+      return {
+        name: 'swap_accepted',
+        subject: title,
+        ctx: {
+          event_title: title,
+          actor_name: d?.actor_name ?? 'A team member',
+          event_date: fmt(d?.event_date),
+        },
+      };
+    case 'swap_declined':
+      return {
+        name: 'swap_declined',
+        subject: title,
+        ctx: {
+          event_title: title,
+          actor_name: d?.actor_name ?? 'A team member',
+        },
+      };
+    case 'replacement_opened':
+      return {
+        name: 'replacement_opened',
+        subject: title,
+        ctx: {
+          event_title: d?.event_title ?? title,
+          event_date: fmt(d?.event_date),
+          actor_name: d?.actor_name ?? 'A team member',
+        },
+      };
+    case 'replacement_claimed':
+      return {
+        name: 'replacement_claimed',
+        subject: title,
+        ctx: {
+          event_title: d?.event_title ?? title,
+          event_date: fmt(d?.event_date),
+          actor_name: d?.actor_name ?? 'A team member',
+        },
+      };
+    case 'invite_account':
+      return {
+        name: 'invite_account',
+        subject: title,
+        ctx: {
+          account_name: d?.account_name ?? '',
+        },
+      };
+    case 'invite_team':
+      return {
+        name: 'invite_team',
+        subject: title,
+        ctx: {
+          account_name: d?.account_name ?? '',
+          team_name: d?.team_name ?? '',
+        },
+      };
+    default:
+      return { name: '', subject: title, ctx: { title, body: row?.body ?? '' } };
+  }
 }
 
 serve(async (req) => {
@@ -171,11 +264,25 @@ serve(async (req) => {
       const to_email = items.find((i: any) => i.user_id === row.user_id)?.to_email;
       if (to_email) {
         try {
-          const html = renderInfoEmail(row);
+          const { name, ctx, subject } = templateMap(row);
+          let html: string | null = null;
+
+          if (name) {
+            const tpl = await loadTemplate(name);
+            if (tpl) {
+              html = renderTemplate(tpl, ctx);
+            }
+          }
+
+          // Fallback to inline if file missing or type unmapped
+          if (!html) {
+            html = renderInfoEmailFallback(row);
+          }
+
           await resend.emails.send({
             from: EMAIL_FROM,
             to: [to_email],
-            subject: row.title ?? 'Servota update',
+            subject: subject || 'Servota update',
             html,
           });
         } catch (e) {
