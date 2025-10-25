@@ -44,11 +44,15 @@ function renderTemplate(tpl: string, ctx: Record<string, string>) {
 
 /** -------- Minimal inline fallback (used only if file missing) -------- */
 function htmlShell(content: string) {
+  // Inline SVG wordmark to avoid external hosting
+  const BRAND_IMG =
+    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='28'><text x='0' y='20' font-family='system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' font-size='20' font-weight='700' fill='#111'>Servota</text></svg>";
+
   return `<!doctype html>
 <html>
   <body style="margin:0;padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto;color:#111">
     <header style="margin-bottom:16px">
-      <img src="https://servota.app/assets/email-logo.png" alt="Servota" height="28" style="vertical-align:middle" />
+      <img src="${BRAND_IMG}" alt="Servota" height="28" style="vertical-align:middle" />
     </header>
     ${content}
     <hr style="margin:24px 0;border:none;border-top:1px solid #eee" />
