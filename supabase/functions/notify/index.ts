@@ -264,9 +264,10 @@ serve(async (req) => {
 
     const results: any[] = [];
 
-    // Send emails (info-only, no CTAs)
+    // Send emails (info-only, no CTAs) and update status
     for (const row of inserted) {
       const to_email = items.find((i: any) => i.user_id === row.user_id)?.to_email;
+
       if (to_email) {
         try {
           const { name, ctx, subject } = templateMap(row);
@@ -278,11 +279,7 @@ serve(async (req) => {
               html = renderTemplate(tpl, ctx);
             }
           }
-
-          // Fallback to inline if file missing or type unmapped
-          if (!html) {
-            html = renderInfoEmailFallback(row);
-          }
+          if (!html) html = renderInfoEmailFallback(row);
 
           await resend.emails.send({
             from: EMAIL_FROM,
@@ -290,10 +287,30 @@ serve(async (req) => {
             subject: subject || 'Servota update',
             html,
           });
+
+          // mark sent so dispatcher won't process this row
+          await admin
+            .from('notifications')
+            .update({
+              status: 'sent',
+              sent_at: new Date().toISOString(),
+              attempts: (row.attempts ?? 0) + 1,
+            })
+            .eq('id', row.id);
         } catch (e) {
           console.error('Resend error', e);
+          // mark error to avoid infinite retries
+          await admin
+            .from('notifications')
+            .update({
+              status: 'error',
+              last_error: String(e?.message ?? e),
+              attempts: (row.attempts ?? 0) + 1,
+            })
+            .eq('id', row.id);
         }
       }
+
       results.push({ id: row.id, user_id: row.user_id, type: row.type });
     }
 
