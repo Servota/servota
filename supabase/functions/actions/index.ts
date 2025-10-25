@@ -1,41 +1,32 @@
 // @ts-nocheck
-// UAL Phase 3 — actions (HTML gateway, scaffold)
-// Responsibilities in this scaffold:
-//  - Accept ?t=<locator>
-//  - Verify HMAC (same scheme as `notify`)
-//  - If valid, mint a short-lived, single-purpose "action" token (JWT-like string)
-//  - Serve a tiny HTML page that attempts `servota://a/<token>` deep link,
-//    and shows a fallback button to continue in the browser.
-// Next steps (later):
-//  - Enforce single-use via public.action_tokens_used (record jti)
-//  - Require/obtain a session and confirm the action where needed
-//  - Execute server-side RPC once user/session is confirmed
+// Servota UAL — Actions Gateway (email CTA executor)
+// Executes actions without JWT (link is HMAC-signed and single-use).
+//
+// Supported actions encoded in the locator payload "a":
+//   - 'swap.accept'        -> accept_and_apply_swap_as(p_user_id, p_swap_request_id)
+//   - 'swap.decline'       -> respond_swap_as(p_user_id, p_swap_request_id, 'decline')
+//   - 'replacement.claim'  -> claim_replacement_as(p_user_id, p_replacement_request_id)
+//
+// Also records single-use in public.action_tokens_used (jti = base64url(payload))
+// and persists the outcome chip via mark_notification_outcome(p_id, p_outcome).
+//
+// Required env:
+//   PROJECT_URL, SERVICE_ROLE_KEY, ACTIONS_HMAC_SECRET
+//
+// Optional deep link: servota://a/<summary>
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
-function b64urlUint8(input: Uint8Array) {
-  return btoa(String.fromCharCode(...input))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replaceAll('=', '');
-}
-function b64urlStr(s: string) {
-  return b64urlUint8(new TextEncoder().encode(s));
-}
-function b64urlToUint8(s: string) {
+// ---------- tiny utils ----------
+function b64uToBytes(s: string) {
   const pad = s.length % 4 ? 4 - (s.length % 4) : 0;
-  const base64 = s.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat(pad);
-  const bin = atob(base64);
+  const b64 = s.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat(pad);
+  const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
-
 async function hmacSha256(input: Uint8Array, secret: string) {
   const key = await crypto.subtle.importKey(
     'raw',
@@ -47,164 +38,193 @@ async function hmacSha256(input: Uint8Array, secret: string) {
   const sig = await crypto.subtle.sign('HMAC', key, input);
   return new Uint8Array(sig);
 }
-
-function parseLocator(t: string) {
-  // format: <b64url(JSON payload)>.<b64url(sig)>
-  const parts = t.split('.');
-  if (parts.length !== 2) throw new Error('bad-locator-format');
-  const [payB64, sigB64] = parts;
-  const payloadBytes = b64urlToUint8(payB64);
-  const sigBytes = b64urlToUint8(sigB64);
-  const json = new TextDecoder().decode(payloadBytes);
-  const payload = JSON.parse(json);
-  return { payload, payloadBytes, sigBytes };
-}
-
-async function verifyLocator(t: string, secret: string) {
-  const { payload, payloadBytes, sigBytes } = parseLocator(t);
-  if (payload?.j !== 'locator') throw new Error('not-a-locator');
-  const expected = await hmacSha256(payloadBytes, secret);
-  // constant-time-ish compare
-  if (expected.length !== sigBytes.length) throw new Error('bad-sig');
-  let ok = 0;
-  for (let i = 0; i < expected.length; i++) ok |= expected[i] ^ sigBytes[i];
-  if (ok !== 0) throw new Error('bad-sig');
-  return payload as {
-    j: 'locator';
-    n: string; // notification id
-    u: string; // intended user id
-    a: string; // action key, e.g., 'account_invite.accept'
-    iat: number;
-  };
-}
-
-function randJti() {
-  const b = new Uint8Array(16);
-  crypto.getRandomValues(b);
-  return b64urlUint8(b);
-}
-
-async function mintActionToken(claims: Record<string, unknown>, secret: string, ttlSeconds = 300) {
-  // VERY small JWT-like token: header.payload.signature (all base64url)
-  const header = { alg: 'HS256', typ: 'JWT', kid: 'hmac.v1' };
-  const now = Math.floor(Date.now() / 1000);
-  const jti = randJti();
-  const body = {
-    j: 'action', // token type
-    ...claims, // { n, u, a }
-    iat: now,
-    exp: now + ttlSeconds,
-    jti,
-  };
-  const headerB64 = b64urlStr(JSON.stringify(header));
-  const payloadB64 = b64urlStr(JSON.stringify(body));
-  const signingInput = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
-  const sig = await hmacSha256(signingInput, secret);
-  const sigB64 = b64urlUint8(sig);
-  return { token: `${headerB64}.${payloadB64}.${sigB64}`, jti, exp: body.exp };
-}
-
-function htmlPage(ok: boolean, message: string, token?: string) {
-  const deep = token ? `servota://a/${encodeURIComponent(token)}` : '';
+function page(title: string, msg: string, ok = true, deepToken = '') {
+  const deep = deepToken ? `servota://a/${encodeURIComponent(deepToken)}` : '';
   return `<!doctype html>
-<html lang="en">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Servota Actions</title>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>${title}</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 32px; }
-  .card { max-width: 560px; margin: 0 auto; border: 1px solid rgba(0,0,0,.08); padding: 24px; border-radius: 12px; }
-  h1 { font-size: 20px; margin: 0 0 8px; }
-  p  { margin: 8px 0 0; line-height: 1.5; }
-  .btn { display:inline-block; margin-top:16px; padding:10px 16px; border-radius:8px; text-decoration:none; }
-  .primary { background:#0ea5e9; color:#fff; }
-  .muted { color: #6b7280; font-size: 12px; }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+:root{ color-scheme: light dark; }
+body{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; padding:32px; }
+.card{ max-width:560px; margin:0 auto; border:1px solid rgba(0,0,0,.1); padding:24px; border-radius:12px; }
+.h1{ font-size:20px; font-weight:700; margin:0 0 8px; }
+.p{ margin:8px 0 0; line-height:1.5; }
+.btn{ display:inline-block; margin-top:16px; padding:10px 16px; border-radius:8px; text-decoration:none; }
+.ok{ background:#10b981; color:#fff; }
+.err{ background:#ef4444; color:#fff; }
+.muted{ color:#6b7280; font-size:12px; margin-top:8px; }
 </style>
 <body>
   <div class="card">
-    <h1>${ok ? 'Action Ready' : 'Action Link Problem'}</h1>
-    <p>${message}</p>
-    ${ok && token ? `<a class="btn primary" id="open" href="${deep}">Open in Servota</a>` : ''}
-    ${
-      ok && token
-        ? `<p class="muted">If the app doesn't open, keep this tab open. We'll complete the action here.</p>`
-        : ''
-    }
-    ${
-      ok && token
-        ? `<p class="muted">Token preview (for debugging):<br><code>${token}</code></p>`
-        : ''
-    }
+    <div class="h1">${ok ? 'Action completed' : 'Action could not be completed'}</div>
+    <div class="p">${msg}</div>
+    ${deep ? `<a class="btn ok" href="${deep}">Open Servota</a>` : ''}
+    <div class="muted">You can close this tab.</div>
   </div>
-<script>
-  (function(){
-    const token = ${JSON.stringify(token ?? '')};
-    if (!token) return;
-    const url = 'servota://a/' + encodeURIComponent(token);
-    // Try deep link shortly after load
-    setTimeout(function(){ location.href = url; }, 300);
-  })();
-</script>
-</body>
-</html>`;
+  <script>
+    (function(){
+      var t=${JSON.stringify(deepToken)};
+      if(!t) return;
+      setTimeout(function(){ location.href='servota://a/'+encodeURIComponent(t); }, 300);
+    })();
+  </script>
+</body></html>`;
 }
 
+async function verifyLocator(t: string, secret: string) {
+  const [payB64, sigB64] = (t || '').split('.');
+  if (!payB64 || !sigB64) throw new Error('bad-locator-format');
+  const payloadBytes = b64uToBytes(payB64);
+  const sigBytes = b64uToBytes(sigB64);
+  const expected = await hmacSha256(payloadBytes, secret);
+  if (expected.length !== sigBytes.length) throw new Error('bad-sig');
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected[i] ^ sigBytes[i];
+  if (diff !== 0) throw new Error('bad-sig');
+  const json = new TextDecoder().decode(payloadBytes);
+  const payload = JSON.parse(json);
+  if (payload?.j !== 'locator') throw new Error('not-a-locator');
+  return { payload, payB64 };
+}
+
+async function recordSingleUse(admin: any, jti: string, uid: string | null) {
+  const { error } = await admin
+    .from('action_tokens_used')
+    .insert({ jti, used_by: uid ?? null })
+    .select('jti');
+  if (error && /duplicate key|primary key/i.test(String(error.message))) {
+    const err: any = new Error('used');
+    err.code = 'used';
+    throw err;
+  }
+  if (error) throw error;
+}
+
+// ---------- HTTP handler ----------
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  // preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'content-type',
+      },
+    });
+  }
 
   try {
-    // Accept GET or POST (query param t)
-    const u = new URL(req.url);
-    const t = u.searchParams.get('t') || '';
+    const url = new URL(req.url);
+    const t = url.searchParams.get('t') || '';
+
+    const secret = Deno.env.get('ACTIONS_HMAC_SECRET') ?? 'dev-secret-change-me';
+    const PROJECT_URL = Deno.env.get('PROJECT_URL')!;
+    const SERVICE_ROLE_KEY = Deno.env.get('SERVICE_ROLE_KEY')!;
+
     if (!t) {
-      return new Response(htmlPage(false, 'Missing action locator (?t=...)'), {
+      return new Response(page('Servota Actions', 'Missing action locator.', false), {
         status: 200,
-        headers: { 'Content-Type': 'text/html; charset=utf-8', ...corsHeaders },
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
     }
 
-    const secret = Deno.env.get('ACTIONS_HMAC_SECRET') ?? 'dev-secret-change-me';
-    let locator;
+    // verify + extract payload
+    let wrap;
     try {
-      locator = await verifyLocator(t, secret);
-    } catch (err) {
-      console.warn('UAL actions: bad/invalid locator', err);
+      wrap = await verifyLocator(t, secret);
+    } catch {
       return new Response(
-        htmlPage(false, 'This action link is invalid or has been tampered with.'),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'text/html; charset=utf-8', ...corsHeaders },
-        }
+        page('Servota Actions', 'This link is invalid or has been tampered with.', false),
+        { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
       );
     }
+    const { payload, payB64 } = wrap;
+    const notifId = payload?.n as string | undefined; // notification id
+    const userId = payload?.u as string | undefined; // actor (email recipient)
+    const action = payload?.a as string | undefined; // action key
+    const reqId = payload?.r as string | undefined; // swap/replacement id
 
-    // TODO (later): if action requires auth, check session via Authorization header
-    // and if not present, prompt sign-in + confirmation.
+    if (!notifId || !userId || !action) {
+      return new Response(page('Servota Actions', 'This link is missing required data.', false), {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      });
+    }
 
-    // Mint a short-lived action token (5 minutes)
-    const { token /*, jti, exp */ } = await mintActionToken(
-      { n: locator.n, u: locator.u, a: locator.a },
-      secret,
-      5 * 60
-    );
+    const admin = createClient(PROJECT_URL, SERVICE_ROLE_KEY);
 
-    // TODO (later): record jti in public.action_tokens_used on successful execution, not here.
+    // single-use check
+    try {
+      await recordSingleUse(admin, payB64, userId);
+    } catch (e: any) {
+      const msg =
+        e?.code === 'used'
+          ? 'This action link has already been used.'
+          : 'Could not validate this link at the moment.';
+      return new Response(page('Servota Actions', msg, false), {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      });
+    }
 
-    return new Response(
-      htmlPage(
-        true,
-        'Your action is ready. We’ll open the Servota app. If it doesn’t open, confirm in this tab.',
-        token
-      ),
-      { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', ...corsHeaders } }
-    );
-  } catch (err) {
-    console.error('UAL actions: unexpected error', err);
-    return new Response(htmlPage(false, 'Unexpected server error.'), {
+    // execute
+    let outcomeSummary = '';
+    let successMsg = 'Done! You can close this tab.';
+
+    try {
+      if (action === 'swap.accept') {
+        const { error } = await admin.rpc('accept_and_apply_swap_as', {
+          p_user_id: userId,
+          p_swap_request_id: reqId,
+        });
+        if (error) throw error;
+        await admin.rpc('mark_notification_outcome', { p_id: notifId, p_outcome: 'accept' });
+        outcomeSummary = 'swap.accepted';
+        successMsg = 'Thanks — your swap has been accepted.';
+      } else if (action === 'swap.decline') {
+        const { error } = await admin.rpc('respond_swap_as', {
+          p_user_id: userId,
+          p_swap_request_id: reqId,
+          p_action: 'decline',
+        });
+        if (error) throw error;
+        await admin.rpc('mark_notification_outcome', { p_id: notifId, p_outcome: 'decline' });
+        outcomeSummary = 'swap.declined';
+        successMsg = 'Thanks — your swap request was declined.';
+      } else if (action === 'replacement.claim') {
+        const { error } = await admin.rpc('claim_replacement_as', {
+          p_user_id: userId,
+          p_replacement_request_id: reqId,
+        });
+        if (error) throw error;
+        await admin.rpc('mark_notification_outcome', { p_id: notifId, p_outcome: 'claim' });
+        outcomeSummary = 'replacement.claimed';
+        successMsg = 'Thanks — you have claimed this replacement.';
+      } else {
+        return new Response(page('Servota Actions', 'Unknown action.', false), {
+          status: 200,
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        });
+      }
+    } catch (e: any) {
+      // show friendly DB error back to the user
+      const msg = String(e?.message ?? 'Action failed.');
+      return new Response(page('Servota Actions', msg, false), {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      });
+    }
+
+    // success page (+ deep link attempt)
+    const deepToken = outcomeSummary ? `${outcomeSummary}:${notifId}` : '';
+    return new Response(page('Servota Actions', successMsg, true, deepToken), {
       status: 200,
-      headers: { 'Content-Type': 'text/html; charset=utf-8', ...corsHeaders },
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    });
+  } catch {
+    return new Response(page('Servota Actions', 'Unexpected error.', false), {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
     });
   }
 });

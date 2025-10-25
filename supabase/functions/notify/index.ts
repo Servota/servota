@@ -1,257 +1,199 @@
 // @ts-nocheck
-// UAL Phase 2 — notify (provider-ready scaffold)
-// - Inserts notification rows
-// - Signs long-lived "locator" for each notification
-// - If EMAIL_PROVIDER + envs + to_email are present, sends a simple email (fallback content)
-// Templates will be handled in Phase 5; for now it's a minimal CTA email.
-//
-// Env (set later with `supabase secrets set`):
-//   PROJECT_URL
-//   SERVICE_ROLE_KEY
-//   ACTIONS_HMAC_SECRET                 // for locator signing (rotate later with kid)
-//   ACTIONS_BASE_URL    (e.g. https://<project-ref>.functions.supabase.co/actions)
-//
-// Optional email wiring (skips if unset or item lacks to_email):
-//   EMAIL_PROVIDER      ('postmark' | 'resend')
-//   EMAIL_FROM          (e.g., 'Servota <no-reply@servota.app>')
-//   POSTMARK_TOKEN      (required if EMAIL_PROVIDER=postmark)
-//   RESEND_API_KEY      (required if EMAIL_PROVIDER=resend)
+// Servota notify (V1 info-only) — inserts notifications and sends branded info emails via Resend
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { Resend } from 'https://esm.sh/resend@3.3.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-type NotifyItem = {
-  user_id: string; // receiver (Servota user id)
-  type: string; // e.g., 'account_invite.accept' | 'swap.accept' | 'swap.decline'
-  title: string;
-  body: string;
-  data?: Record<string, unknown>;
-  channel?: string; // 'email' | 'push' | ...
-  scheduled_at?: string; // ISO timestamp
-  to_email?: string; // Optional for Phase 2 (lets us email without a profile lookup)
-};
-
-function b64url(input: Uint8Array) {
-  return btoa(String.fromCharCode(...input))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replaceAll('=', '');
-}
-
-async function signLocator(payload: Record<string, unknown>) {
-  const secret = Deno.env.get('ACTIONS_HMAC_SECRET') ?? 'dev-secret-change-me';
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  const body = enc.encode(JSON.stringify(payload));
-  const sigBuf = await crypto.subtle.sign('HMAC', key, body);
-  const sig = b64url(new Uint8Array(sigBuf));
-  const pay = b64url(body);
-  return `${pay}.${sig}`;
-}
-
-function buildCtaUrl(locator: string) {
-  const base = Deno.env.get('ACTIONS_BASE_URL') ?? '';
-  if (!base) return null;
-  const u = new URL(base);
-  u.searchParams.set('t', locator);
-  return u.toString();
-}
-
-// --- Email providers (minimal send for Phase 2)
-
-async function sendViaPostmark(
-  to: string,
-  from: string,
-  subject: string,
-  html: string,
-  text: string
-) {
-  const token = Deno.env.get('POSTMARK_TOKEN');
-  if (!token) throw new Error('POSTMARK_TOKEN not set');
-  const res = await fetch('https://api.postmarkapp.com/email', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Postmark-Server-Token': token,
-    },
-    body: JSON.stringify({ From: from, To: to, Subject: subject, HtmlBody: html, TextBody: text }),
-  });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => res.statusText);
-    throw new Error(`postmark: ${res.status} ${msg}`);
-  }
-  return await res.json().catch(() => ({}));
-}
-
-async function sendViaResend(
-  to: string,
-  from: string,
-  subject: string,
-  html: string,
-  text: string
-) {
-  const key = Deno.env.get('RESEND_API_KEY');
-  if (!key) throw new Error('RESEND_API_KEY not set');
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ from, to, subject, html, text }),
-  });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => res.statusText);
-    throw new Error(`resend: ${res.status} ${msg}`);
-  }
-  return await res.json().catch(() => ({}));
-}
-
-async function maybeSendEmail(
-  to_email: string | undefined,
-  title: string,
-  body: string,
-  ctaUrl: string | null
-) {
-  if (!to_email) return { sent: false, reason: 'no-to-email' };
-
-  const provider = (Deno.env.get('EMAIL_PROVIDER') || '').toLowerCase();
-  const from = Deno.env.get('EMAIL_FROM') || 'Servota <no-reply@servota.app>';
-
-  if (!provider) return { sent: false, reason: 'provider-not-configured' };
-
-  // Simple fallback content for Phase 2; proper templates in Phase 5.
-  const subject = title;
-  const html = `
-    <div style="font-family:Inter,Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:#111">
-      <h2 style="margin:0 0 12px">${escapeHtml(title)}</h2>
-      <p style="margin:0 0 16px">${escapeHtml(body)}</p>
-      ${
-        ctaUrl
-          ? `<p><a href="${ctaUrl}" style="display:inline-block;background:#0ea5e9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px">Open in Servota</a></p>`
-          : `<p style="color:#b45309">No ACTIONS_BASE_URL configured; CTA omitted.</p>`
-      }
-      <p style="margin-top:24px;color:#6b7280">If the button doesn’t work, paste this URL into your browser:<br>${ctaUrl || '(not available)'}</p>
-    </div>
-  `;
-  const text = `${title}\n\n${body}\n\n${ctaUrl ? 'Open: ' + ctaUrl : 'No CTA available'}`;
-
+function fmt(dt?: string | number | Date) {
   try {
-    if (provider === 'postmark') {
-      const r = await sendViaPostmark(to_email, from, subject, html, text);
-      return { sent: true, provider, id: r?.MessageID ?? null };
-    }
-    if (provider === 'resend') {
-      const r = await sendViaResend(to_email, from, subject, html, text);
-      return { sent: true, provider, id: r?.id ?? null };
-    }
-    return { sent: false, reason: 'unknown-provider' };
-  } catch (e) {
-    return { sent: false, reason: String(e?.message ?? e) };
+    if (!dt) return '';
+    const d = new Date(dt);
+    return isNaN(d.getTime()) ? '' : d.toLocaleString();
+  } catch {
+    return '';
   }
 }
 
-function escapeHtml(s: string) {
-  return String(s)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
+function htmlShell(content: string) {
+  return `<!doctype html>
+<html>
+  <body style="margin:0;padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto;color:#111">
+    <header style="margin-bottom:16px">
+      <img src="https://servota.app/assets/email-logo.png" alt="Servota" height="28" style="vertical-align:middle" />
+    </header>
+    ${content}
+    <hr style="margin:24px 0;border:none;border-top:1px solid #eee" />
+    <p style="font-size:12px;color:#666">
+      Open the <strong>Servota</strong> app and go to <em>Notifications</em> to respond.
+    </p>
+  </body>
+</html>`;
+}
+
+function renderInfoEmail(row: any) {
+  const t = row?.type ?? '';
+  const d = row?.data ?? {};
+  const title = row?.title ?? 'Servota update';
+
+  if (t === 'swap_requested') {
+    const toLabel = d?.to_label ?? title;
+    const fromDate = fmt(d?.from_date);
+    const toDate = fmt(d?.to_date);
+    return htmlShell(`
+      <h2 style="margin:0 0 8px">Swap request</h2>
+      <p style="margin:0 0 6px"><strong>${toLabel}</strong></p>
+      <p style="margin:0">Theirs: ${fromDate}</p>
+      <p style="margin:0 0 12px">Yours: ${toDate}</p>
+    `);
+  }
+
+  if (t === 'swap_accepted') {
+    const actor = d?.actor_name ?? 'A team member';
+    const when = fmt(d?.event_date);
+    return htmlShell(`
+      <h2 style="margin:0 0 8px">Swap accepted</h2>
+      <p style="margin:0 0 6px"><strong>${title}</strong></p>
+      <p style="margin:0 0 12px">${actor} accepted your swap${when ? ` for ${when}` : ''}.</p>
+    `);
+  }
+
+  if (t === 'swap_declined') {
+    const actor = d?.actor_name ?? 'A team member';
+    return htmlShell(`
+      <h2 style="margin:0 0 8px">Swap declined</h2>
+      <p style="margin:0 0 6px"><strong>${title}</strong></p>
+      <p style="margin:0 0 12px">${actor} declined your swap request.</p>
+    `);
+  }
+
+  if (t === 'replacement_opened') {
+    const evTitle = d?.event_title ?? title;
+    const when = fmt(d?.event_date);
+    const actor = d?.actor_name ?? 'A team member';
+    return htmlShell(`
+      <h2 style="margin:0 0 8px">Replacement request</h2>
+      <p style="margin:0 0 6px"><strong>${evTitle}</strong>${when ? ` (${when})` : ''}</p>
+      <p style="margin:0">From ${actor}</p>
+    `);
+  }
+
+  if (t === 'replacement_claimed') {
+    const evTitle = d?.event_title ?? title;
+    const when = fmt(d?.event_date);
+    const actor = d?.actor_name ?? 'A team member';
+    return htmlShell(`
+      <h2 style="margin:0 0 8px">Replacement filled</h2>
+      <p style="margin:0 0 6px"><strong>${evTitle}</strong>${when ? ` (${when})` : ''}</p>
+      <p style="margin:0 0 12px">${actor} has claimed your replacement request.</p>
+    `);
+  }
+
+  if (t === 'invite_account') {
+    const accountName = d?.account_name ?? '';
+    return htmlShell(`
+      <h2 style="margin:0 0 8px">You’ve been invited</h2>
+      <p style="margin:0">Join <strong>${accountName}</strong> on Servota.</p>
+    `);
+  }
+
+  if (t === 'invite_team') {
+    const accountName = d?.account_name ?? '';
+    const teamName = d?.team_name ?? '';
+    return htmlShell(`
+      <h2 style="margin:0 0 8px">Team invite</h2>
+      <p style="margin:0">You’ve been invited to join the <strong>${teamName}</strong> team at <strong>${accountName}</strong>.</p>
+    `);
+  }
+
+  // fallback generic
+  const body = row?.body ?? 'You have a new update.';
+  return htmlShell(`
+    <h2 style="margin:0 0 8px">${title}</h2>
+    <p style="margin:0 0 12px">${body}</p>
+  `);
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') {
-    return new Response(
-      JSON.stringify({ ok: false, code: 'method-not-allowed', message: 'Method not allowed' }),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    );
+    return new Response('Only POST', { status: 405, headers: corsHeaders });
   }
 
   try {
-    const admin = createClient(Deno.env.get('PROJECT_URL')!, Deno.env.get('SERVICE_ROLE_KEY')!);
-
-    const { items } = (await req.json().catch(() => ({}))) as { items?: NotifyItem[] };
-    if (!Array.isArray(items) || items.length === 0) {
-      return new Response(
-        JSON.stringify({ ok: false, code: 'bad-request', message: 'Missing items[]' }),
-        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
+    const payload = await req.json();
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    if (items.length === 0) {
+      return new Response(JSON.stringify({ ok: false, message: 'No items' }), {
+        status: 400,
+        headers: corsHeaders,
+      });
     }
 
-    const nowIso = new Date().toISOString();
-    const rows = items.map((n) => ({
-      user_id: n.user_id,
-      type: n.type,
-      title: n.title,
-      body: n.body,
-      data: n.data ?? {},
-      channel: n.channel ?? 'email',
-      scheduled_at: n.scheduled_at ?? nowIso,
-      status: 'queued',
-      attempts: 0,
-    }));
+    const PROJECT_URL = Deno.env.get('PROJECT_URL')!;
+    const SERVICE_ROLE_KEY = Deno.env.get('SERVICE_ROLE_KEY')!;
+    const EMAIL_FROM = Deno.env.get('EMAIL_FROM')!;
+    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
 
-    // Insert notifications
+    const admin = createClient(PROJECT_URL, SERVICE_ROLE_KEY);
+    const resend = new Resend(RESEND_API_KEY);
+
+    // Insert notifications (queue)
     const { data: inserted, error: insErr } = await admin
       .from('notifications')
-      .insert(rows)
-      .select('id,user_id,type,title,body,data,channel,scheduled_at,created_at');
-    if (insErr) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          code: 'insert-failed',
-          message: String(insErr.message || insErr),
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
+      .insert(
+        items.map((i: any) => ({
+          user_id: i.user_id,
+          type: i.type,
+          title: i.title ?? 'Servota update',
+          body: i.body ?? '',
+          data: i.data ?? {},
+          channel: i.channel ?? 'email',
+          status: 'queued',
+          account_id: i.account_id ?? null,
+          team_id: i.team_id ?? null,
+          scheduled_at: i.scheduled_at ?? null,
+        }))
+      )
+      .select();
+
+    if (insErr) throw insErr;
+
+    const results: any[] = [];
+
+    // Send emails (info-only, no CTAs)
+    for (const row of inserted) {
+      const to_email = items.find((i: any) => i.user_id === row.user_id)?.to_email;
+      if (to_email) {
+        try {
+          const html = renderInfoEmail(row);
+          await resend.emails.send({
+            from: EMAIL_FROM,
+            to: [to_email],
+            subject: row.title ?? 'Servota update',
+            html,
+          });
+        } catch (e) {
+          console.error('Resend error', e);
+        }
+      }
+      results.push({ id: row.id, user_id: row.user_id, type: row.type });
     }
 
-    // Create locators + (optional) email each
-    const results = [];
-    for (let i = 0; i < inserted.length; i++) {
-      const r = inserted[i];
-      const payload = {
-        j: 'locator',
-        n: r.id, // notification id
-        u: r.user_id, // intended user
-        a: r.type, // action kind (e.g., 'account_invite.accept')
-        iat: Math.floor(Date.now() / 1000),
-      };
-      const locator = await signLocator(payload);
-      const cta = buildCtaUrl(locator);
-
-      const item = items[i] || {};
-      const to_email = item.to_email;
-      const sendInfo = await maybeSendEmail(to_email, r.title, r.body, cta);
-
-      results.push({ id: r.id, user_id: r.user_id, type: r.type, locator, cta, email: sendInfo });
-    }
-
-    return new Response(JSON.stringify({ ok: true, count: results.length, results }), {
+    return new Response(JSON.stringify({ ok: true, count: inserted.length, results }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
     });
   } catch (e) {
-    return new Response(
-      JSON.stringify({ ok: false, code: 'server-error', message: String(e?.message ?? e) }),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    );
+    console.error(e);
+    return new Response(JSON.stringify({ ok: false, message: String(e?.message ?? e) }), {
+      status: 500,
+      headers: corsHeaders,
+    });
   }
 });

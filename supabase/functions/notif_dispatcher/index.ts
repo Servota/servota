@@ -1,203 +1,217 @@
-// supabase/functions/notif_dispatcher/index.ts
-// Sends real push notifications via Expo Push API (no legacy server key needed for V1).
-// Requires: push tokens in `push_tokens` and queued rows in `notifications` (via v_notifications_pending).
-
 // @ts-nocheck
-import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+// notif_dispatcher (v2) — queue worker for in-app notifications + email sending (Resend).
+// - Reads v_notifications_pending
+// - Builds UAL CTAs for swap/replacement
+// - Sends via Resend
+// - Updates notifications.status to 'sent' / 'error', increments attempts
 
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { Resend } from 'https://esm.sh/resend@3.3.0';
 
-const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-const serviceRoleKey = Deno.env.get('SERVICE_ROLE_KEY') ?? '';
-const admin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
-
-// race-safe claim
-async function claimNotification(id: string) {
-  const { data, error } = await admin
-    .from('notifications')
-    .update({
-      status: 'sending',
-      attempts: 1,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .eq('status', 'queued')
-    .lte('scheduled_at', new Date().toISOString())
-    .select('*')
-    .single();
-  if (error) return { claimed: false, error };
-  return { claimed: !!data, row: data };
+function b64u(a: Uint8Array) {
+  return btoa(String.fromCharCode(...a))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '');
+}
+async function hmacSha256(input: Uint8Array, secret: string) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, input);
+  return new Uint8Array(sig);
+}
+async function signLocator(payload: Record<string, unknown>, secret: string) {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  const sig = await hmacSha256(bytes, secret);
+  return b64u(bytes) + '.' + b64u(sig);
 }
 
-async function sendExpoPush(messages: Array<Record<string, unknown>>) {
-  // Expo allows up to 100 messages per call
-  const chunks: Array<typeof messages> = [];
-  for (let i = 0; i < messages.length; i += 100) chunks.push(messages.slice(i, i + 100));
-
-  const results: Array<{ ok: boolean; data?: unknown; error?: unknown }> = [];
-  for (const chunk of chunks) {
-    const res = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(chunk),
+serve(async (req) => {
+  if (req.method === 'OPTIONS')
+    return new Response('ok', {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+      },
     });
-    if (!res.ok) {
-      results.push({ ok: false, error: `http ${res.status}` });
-      continue;
-    }
-    const json = await res.json().catch(() => ({}));
-    results.push({ ok: true, data: json });
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ ok: false, message: 'POST only' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
-  return results;
-}
 
-serve(async (req: Request): Promise<Response> => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  const PROJECT_URL = Deno.env.get('PROJECT_URL')!;
+  const SERVICE_ROLE_KEY = Deno.env.get('SERVICE_ROLE_KEY')!;
+  const ACTIONS_BASE_URL = Deno.env.get('ACTIONS_BASE_URL')!;
+  const ACTIONS_HMAC_SECRET = Deno.env.get('ACTIONS_HMAC_SECRET')!;
+  const EMAIL_PROVIDER = (Deno.env.get('EMAIL_PROVIDER') || 'resend').toLowerCase();
+  const EMAIL_FROM = Deno.env.get('EMAIL_FROM')!;
+  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
 
-  const url = new URL(req.url);
-  const isPost = req.method === 'POST';
-  const body = isPost ? await req.json().catch(() => ({})) : {};
-  const limitRaw = (body.limit ?? url.searchParams.get('limit') ?? 10) as number | string;
-  const dryRun = (body.dry_run ?? url.searchParams.get('dry_run') ?? 'false').toString() === 'true';
-  const limit = Math.max(1, Math.min(50, Number(limitRaw)));
+  const admin = createClient(PROJECT_URL, SERVICE_ROLE_KEY);
+  const resend = EMAIL_PROVIDER === 'resend' ? new Resend(RESEND_API_KEY) : null;
 
-  // fetch due notifications
-  const { data: pending, error: fetchErr } = await admin
+  // 1) Fetch due notifications
+  const { data: rows, error: qErr } = await admin
     .from('v_notifications_pending')
     .select('*')
-    .order('scheduled_at', { ascending: true })
-    .limit(limit);
-
-  if (fetchErr) {
-    console.error('fetch pending error:', fetchErr);
-    return new Response(JSON.stringify({ ok: false, error: 'fetch_failed' }), {
+    .limit(50);
+  if (qErr) {
+    return new Response(JSON.stringify({ ok: false, message: String(qErr.message || qErr) }), {
       status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
-  let processed = 0;
-  let sent = 0;
-  let failed = 0;
-  const logs: Array<Record<string, unknown>> = [];
+  const results: any[] = [];
 
-  for (const n of pending ?? []) {
-    const claim = await claimNotification(n.id);
-    if (!claim.claimed) {
-      logs.push({ id: n.id, skip: 'lost_race' });
-      continue;
-    }
-    processed++;
+  for (const n of rows || []) {
+    // Skip if not email channel
+    if ((n.channel || 'email') !== 'email') continue;
 
-    try {
-      if (dryRun) {
-        await admin
-          .from('notifications')
-          .update({ status: 'sent', sent_at: new Date().toISOString() })
-          .eq('id', n.id);
-        sent++;
-        logs.push({ id: n.id, dryRun: true });
-        continue;
-      }
-
-      if (n.channel === 'push') {
-        // tokens for recipient
-        const { data: tokens, error: tokErr } = await admin
-          .from('push_tokens')
-          .select('token')
-          .eq('user_id', n.user_id)
-          .eq('status', 'active');
-
-        if (tokErr) throw tokErr;
-
-        const tokenList = (tokens ?? []).map((t) => t.token);
-        if (tokenList.length === 0) {
-          await admin
-            .from('notifications')
-            .update({ status: 'failed', last_error: 'no_active_push_tokens' })
-            .eq('id', n.id);
-          failed++;
-          logs.push({ id: n.id, failed: 'no_active_push_tokens' });
-          continue;
-        }
-
-        // build Expo messages
-        const messages = tokenList.map((to) => ({
-          to,
-          title: n.title ?? 'Servota',
-          body: n.body ?? '',
-          data: n.data ?? {},
-          sound: null,
-          // for SDK 53, channel setup later; basic delivery now
-        }));
-
-        const results = await sendExpoPush(messages);
-        const anyError = results.some((r) => !r.ok);
-
-        if (anyError) {
-          await admin
-            .from('notifications')
-            .update({
-              status: 'failed',
-              last_error: JSON.stringify(results),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', n.id);
-          failed++;
-          logs.push({ id: n.id, failed: 'expo_push_error', results });
-        } else {
-          await admin
-            .from('notifications')
-            .update({
-              status: 'sent',
-              sent_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', n.id);
-          sent++;
-          logs.push({ id: n.id, sent: true, tokens: tokenList.length });
-        }
-      } else if (n.channel === 'email') {
-        // future: integrate provider
-        await admin
-          .from('notifications')
-          .update({ status: 'sent', sent_at: new Date().toISOString() })
-          .eq('id', n.id);
-        sent++;
-      } else {
-        await admin
-          .from('notifications')
-          .update({
-            status: 'failed',
-            last_error: `unsupported_channel:${n.channel}`,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', n.id);
-        failed++;
-      }
-    } catch (err) {
-      console.error('dispatch error', { id: n.id, err: String(err) });
+    // Resolve recipient email (auth.users)
+    const { data: ures } = await admin.auth.admin
+      .getUserById(n.user_id)
+      .catch(() => ({ data: null }));
+    const to = ures?.user?.email || null;
+    if (!to) {
       await admin
         .from('notifications')
         .update({
-          status: 'failed',
-          last_error: String(err),
-          updated_at: new Date().toISOString(),
+          status: 'error',
+          last_error: 'no-recipient-email',
+          attempts: (n.attempts || 0) + 1,
         })
         .eq('id', n.id);
-      failed++;
+      results.push({ id: n.id, error: 'no-recipient-email' });
+      continue;
+    }
+
+    // Build default locator (non-executing)
+    const baseLocator = await signLocator(
+      { j: 'locator', n: n.id, u: n.user_id, a: n.type, iat: Math.floor(Date.now() / 1000) },
+      ACTIONS_HMAC_SECRET
+    );
+    const baseCta = `${ACTIONS_BASE_URL}?t=${baseLocator}`;
+
+    // Multi-CTAs for specific types
+    let cta_accept: string | null = null;
+    let cta_decline: string | null = null;
+    let cta_claim: string | null = null;
+
+    if (n.type === 'swap_requested') {
+      const rid = (n.data as any)?.swap_request_id || (n.data as any)?.request_id || null;
+      const l1 = await signLocator(
+        {
+          j: 'locator',
+          n: n.id,
+          u: n.user_id,
+          a: 'swap.accept',
+          r: rid,
+          iat: Math.floor(Date.now() / 1000),
+        },
+        ACTIONS_HMAC_SECRET
+      );
+      const l2 = await signLocator(
+        {
+          j: 'locator',
+          n: n.id,
+          u: n.user_id,
+          a: 'swap.decline',
+          r: rid,
+          iat: Math.floor(Date.now() / 1000),
+        },
+        ACTIONS_HMAC_SECRET
+      );
+      cta_accept = `${ACTIONS_BASE_URL}?t=${l1}`;
+      cta_decline = `${ACTIONS_BASE_URL}?t=${l2}`;
+    }
+
+    if (n.type === 'replacement_opened') {
+      const rid = (n.data as any)?.replacement_request_id || (n.data as any)?.request_id || null;
+      const l3 = await signLocator(
+        {
+          j: 'locator',
+          n: n.id,
+          u: n.user_id,
+          a: 'replacement.claim',
+          r: rid,
+          iat: Math.floor(Date.now() / 1000),
+        },
+        ACTIONS_HMAC_SECRET
+      );
+      cta_claim = `${ACTIONS_BASE_URL}?t=${l3}`;
+    }
+
+    // Compose very simple HTML (you’ll brand this later)
+    const html =
+      cta_accept && cta_decline
+        ? `
+          <h2>${n.title}</h2>
+          <p>${n.body}</p>
+          <p>
+            <a href="${cta_accept}" style="background:#16a34a;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Accept</a>
+            &nbsp;
+            <a href="${cta_decline}" style="background:#ef4444;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Decline</a>
+          </p>
+          <p style="font-size:12px;color:#6b7280;">If the buttons don’t work, copy this URL:<br>${baseCta}</p>
+        `
+        : cta_claim
+          ? `
+          <h2>${n.title}</h2>
+          <p>${n.body}</p>
+          <p>
+            <a href="${cta_claim}" style="background:#16a34a;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Claim</a>
+          </p>
+          <p style="font-size:12px;color:#6b7280;">If the button doesn’t work, copy this URL:<br>${baseCta}</p>
+        `
+          : `
+          <h2>${n.title}</h2>
+          <p>${n.body}</p>
+          <p><a href="${baseCta}" style="background:#0ea5e9;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">View</a></p>
+          <p style="font-size:12px;color:#6b7280;">If the button doesn’t work, copy this URL:<br>${baseCta}</p>
+        `;
+
+    try {
+      if (!resend) throw new Error('No email provider configured');
+      await resend.emails.send({
+        from: EMAIL_FROM,
+        to: [to],
+        subject: n.title,
+        html,
+      });
+
+      // mark sent
+      await admin
+        .from('notifications')
+        .update({
+          status: 'sent',
+          sent_at: new Date().toISOString(),
+          attempts: (n.attempts || 0) + 1,
+        })
+        .eq('id', n.id);
+      results.push({ id: n.id, sent: true });
+    } catch (e: any) {
+      await admin
+        .from('notifications')
+        .update({
+          status: 'error',
+          last_error: String(e?.message ?? e),
+          attempts: (n.attempts || 0) + 1,
+        })
+        .eq('id', n.id);
+      results.push({ id: n.id, error: String(e?.message ?? e) });
     }
   }
 
-  return new Response(JSON.stringify({ ok: true, processed, sent, failed, limit, dryRun, logs }), {
+  return new Response(JSON.stringify({ ok: true, processed: results.length, results }), {
     status: 200,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
   });
 });
