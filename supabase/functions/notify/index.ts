@@ -44,9 +44,9 @@ function renderTemplate(tpl: string, ctx: Record<string, string>) {
 
 /** -------- Minimal inline fallback (used only if file missing) -------- */
 function htmlShell(content: string) {
-  // Inline SVG wordmark to avoid external hosting
+  // Hosted logo (GoDaddy/CDN)
   const BRAND_IMG =
-    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='28'><text x='0' y='20' font-family='system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' font-size='20' font-weight='700' fill='#111'>Servota</text></svg>";
+    'https://img1.wsimg.com/isteam/ip/8e752928-d113-4594-9166-4e9d6125cbf6/servota-logo.png/:/rs=h:175,m';
 
   return `<!doctype html>
 <html>
