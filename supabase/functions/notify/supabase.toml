@@ -1,2 +1,4 @@
-[functions.notify]
-verify_jwt = false
+(
+echo [functions]
+echo verify_jwt = false
+) > supabase\functions\notify\supabase.toml
