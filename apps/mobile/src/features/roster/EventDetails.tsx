@@ -166,7 +166,7 @@ export default function EventDetails({
   const fmtDayBadge = (iso: string) => {
     const d = new Date(iso);
     return {
-      dow: d.toLocaleDateString(undefined, { weekday: 'short' }),
+      dow: d.toLocaleDateString(undefined, { month: 'short' }),
       day: d.getDate().toString().padStart(2, '0'),
     };
   };
