@@ -22,10 +22,15 @@ type SiblingRow = {
 };
 
 type EnrichedSibling = SiblingRow & {
-  assignment_id: string | null; // earliest assignment for that event (if any)
-  assignee_name: string; // "Unassigned" | profile full_name | "Assigned"
-  is_mine: boolean; // true if I'm the earliest/primary assignee
+  assignment_id: string | null;
+  assignee_name: string;
+  is_mine: boolean;
 };
+
+type ConfirmState =
+  | { open: false }
+  | { open: true; kind: 'replacement' }
+  | { open: true; kind: 'swap' };
 
 export default function EventDetails({
   open,
@@ -48,21 +53,20 @@ export default function EventDetails({
   const [targetId, setTargetId] = useState<string | null>(null);
   const target = (siblings ?? []).find((e) => e.event_id === targetId) ?? null;
 
+  const [confirm, setConfirm] = useState<ConfirmState>({ open: false });
+
   useEffect(() => {
     setTargetId(null);
   }, [selected.event_id]);
 
-  // Load base assignment + sibling events with assignee context (match mobile behaviour)
   useEffect(() => {
     let mounted = true;
     (async () => {
       if (!open) return;
 
-      // Determine current user
       const { data: userRes } = await supabase.auth.getUser();
       const me = userRes?.user?.id ?? null;
 
-      // Base assignment (am I assigned on the selected/base date?)
       if (me) {
         const { data: baseAsg } = await supabase
           .from('assignments')
@@ -77,14 +81,12 @@ export default function EventDetails({
         setBaseAssignmentId(null);
       }
 
-      // If this event is not part of a template series, there are no "other dates"
       if (!selected.template_id) {
         if (!mounted) return;
         setSiblings([]);
         return;
       }
 
-      // Sibling events in the same series (not including the base event)
       const nowIso = new Date().toISOString();
       const { data: evRows, error: evErr } = await supabase
         .from('events')
@@ -114,7 +116,6 @@ export default function EventDetails({
         return;
       }
 
-      // Pull earliest assignment per sibling event
       const evIds = baseFiltered.map((r) => r.event_id);
       const { data: asgRows } = await supabase
         .from('assignments')
@@ -122,7 +123,6 @@ export default function EventDetails({
         .in('event_id', evIds)
         .order('assigned_at', { ascending: true });
 
-      // Map earliest per event
       const firstByEvent: Record<string, { id: string; user_id: string } | null> = {};
       const userSet = new Set<string>();
       for (const id of evIds) firstByEvent[id] = null;
@@ -133,7 +133,6 @@ export default function EventDetails({
         }
       }
 
-      // Resolve assignee names
       let profilesByUser: Record<string, string> = {};
       if (userSet.size > 0) {
         const { data: profRows } = await supabase
@@ -145,7 +144,6 @@ export default function EventDetails({
         );
       }
 
-      // Build enriched sibling rows
       const out: EnrichedSibling[] = baseFiltered.map((ev) => {
         const first = firstByEvent[ev.event_id];
         if (first) {
@@ -182,7 +180,6 @@ export default function EventDetails({
     supabase,
   ]);
 
-  // ---- formatting helpers (simple ASCII to avoid encoding glitches) ----
   const fmtTimeRange = (sIso: string, eIso: string) => {
     const s = new Date(sIso);
     const e = new Date(eIso);
@@ -193,7 +190,6 @@ export default function EventDetails({
     });
     const hhmm = (d: Date) =>
       d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(' ', '');
-    // Example: Mon, Oct 27 - 9:00 AM to 5:00 PM
     return `${day} - ${hhmm(s)} to ${hhmm(e)}`;
   };
 
@@ -204,8 +200,8 @@ export default function EventDetails({
     return { dow, day };
   };
 
-  // ---- actions ----
-  const cantMakeIt = async () => {
+  // ---- actions (with confirms) ----
+  const runCantMakeIt = async () => {
     try {
       const { data: userRes } = await supabase.auth.getUser();
       const me = userRes?.user?.id ?? null;
@@ -225,11 +221,11 @@ export default function EventDetails({
     }
   };
 
-  const proposeSwap = async () => {
+  const runProposeSwap = async () => {
     if (!target) return;
-    // NOTE: Keeping this as a stub until you confirm the RPC you want to call.
+    // Still a stub until you confirm RPC endpoint (will replace with real call).
     alert(
-      'Propose swap clicked for:\n' +
+      'Propose swap sent for:\n' +
         `${fmtTimeRange(selected.starts_at, selected.ends_at)}  ↔  ${fmtTimeRange(
           target.starts_at,
           target.ends_at
@@ -237,11 +233,6 @@ export default function EventDetails({
     );
   };
 
-  // Eligible to propose only if:
-  // - I have a baseAssignmentId
-  // - Target exists
-  // - Target is assigned to someone (not "Unassigned")
-  // - Target is NOT mine
   const proposeEnabled =
     !!baseAssignmentId &&
     !!target &&
@@ -258,7 +249,7 @@ export default function EventDetails({
 
       {/* Drawer */}
       <div className="absolute right-0 top-0 h-full w-full max-w-[520px] bg-white shadow p-5 overflow-y-auto">
-        {/* Header actions card (matches mobile structure) */}
+        {/* Actions card with date badge */}
         <div className="border border-[#ececec] rounded-[14px] p-3 bg-white shadow-sm">
           <div className="flex items-center gap-3">
             {/* date badge */}
@@ -289,22 +280,24 @@ export default function EventDetails({
           <div className="flex gap-2">
             {/* Filled neutral */}
             <button
-              className="py-2 px-3 rounded-[12px] border border-[#ececec] bg-[#eef1f5] font-extrabold text-[12px] text-[#111]"
-              onClick={cantMakeIt}
+              className="py-2 px-3 rounded-[12px] border border-[#ececec] bg-[#eef1f5] font-extrabold text-[12px] text-[#111] transition active:translate-y-[1px] active:shadow-none hover:bg-[#e9eef4] focus:outline-none focus:ring-2 focus:ring-[#cbd5e1]"
+              onClick={() => setConfirm({ open: true, kind: 'replacement' })}
+              aria-pressed={false}
               title="Open replacement request"
             >
               Can't make it
             </button>
 
-            {/* Outline neutral (disabled until eligible) */}
+            {/* Outline neutral */}
             <button
-              className={`py-2 px-3 rounded-[12px] border font-extrabold text-[12px] ${
+              className={`py-2 px-3 rounded-[12px] border font-extrabold text-[12px] transition focus:outline-none ${
                 proposeEnabled
-                  ? 'border-[#d1d5db] bg-white text-[#111]'
+                  ? 'border-[#d1d5db] bg-white text-[#111] hover:bg-[#f9fafb] active:translate-y-[1px] active:shadow-none focus:ring-2 focus:ring-[#cbd5e1]'
                   : 'border-[#e5e7eb] bg-white text-[#9aa3af] cursor-not-allowed'
               }`}
-              onClick={proposeSwap}
+              onClick={() => proposeEnabled && setConfirm({ open: true, kind: 'swap' })}
               disabled={!proposeEnabled}
+              aria-pressed={false}
               title={proposeEnabled ? 'Propose swap' : 'Select a date below to enable'}
             >
               {target ? 'Propose swap' : 'Select a date below'}
@@ -338,7 +331,7 @@ export default function EventDetails({
                   <button
                     className={`w-full text-left p-3 rounded-[14px] bg-white border shadow-sm transition
                       ${active ? 'border-[#10b981]' : 'border-[#ececec]'}
-                      ${isDisabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}
+                      ${isDisabled ? 'opacity-60 cursor-not-allowed' : 'hover:bg-[#fafafa] cursor-pointer'}
                     `}
                     onClick={() => {
                       if (isDisabled) return;
@@ -366,6 +359,77 @@ export default function EventDetails({
               );
             })}
           </ul>
+        )}
+
+        {/* Lightweight confirm modal (inline) */}
+        {confirm.open && (
+          <div className="absolute inset-0 flex items-center justify-center z-[60]">
+            <div
+              className="absolute inset-0 bg-black/30"
+              onClick={() => setConfirm({ open: false })}
+            />
+            <div className="relative w-full max-w-[460px] bg-white rounded-[14px] border border-[#e6e7ea] shadow-lg p-4">
+              <div className="text-[18px] font-bold text-[#111]">
+                {confirm.kind === 'replacement' ? "Can't make it?" : 'Propose this swap?'}
+              </div>
+              <div className="mt-2 text-[13px] text-[#444]">
+                {confirm.kind === 'replacement' ? (
+                  <>
+                    <div className="font-semibold">{selected.label}</div>
+                    <div>{fmtTimeRange(selected.starts_at, selected.ends_at)}</div>
+                    <div className="mt-2 text-[#6b7280]">
+                      We’ll notify eligible teammates to take your place.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="font-semibold">You ⟷ Them</div>
+                    <div>{fmtTimeRange(selected.starts_at, selected.ends_at)}</div>
+                    <div className="my-1">↕</div>
+                    <div>
+                      {target
+                        ? fmtTimeRange(target.starts_at, target.ends_at)
+                        : 'Select a date below'}
+                    </div>
+                    <div className="mt-2 text-[#6b7280]">
+                      They’ll receive your request and can accept or decline.
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  className="py-2 px-3 rounded-[10px] border border-[#e5e7eb] bg-white text-[12px] font-bold hover:bg-[#fafafa] transition"
+                  onClick={() => setConfirm({ open: false })}
+                >
+                  Cancel
+                </button>
+                {confirm.kind === 'replacement' ? (
+                  <button
+                    className="py-2 px-3 rounded-[10px] border border-[#1d4ed8] bg-[#1d4ed8] text-white text-[12px] font-bold hover:brightness-105 active:translate-y-[1px] transition"
+                    onClick={async () => {
+                      setConfirm({ open: false });
+                      await runCantMakeIt();
+                    }}
+                  >
+                    Confirm
+                  </button>
+                ) : (
+                  <button
+                    className="py-2 px-3 rounded-[10px] border border-[#10b981] bg-[#10b981] text-white text-[12px] font-bold hover:brightness-105 active:translate-y-[1px] transition disabled:opacity-60"
+                    disabled={!proposeEnabled}
+                    onClick={async () => {
+                      setConfirm({ open: false });
+                      await runProposeSwap();
+                    }}
+                  >
+                    Send request
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
