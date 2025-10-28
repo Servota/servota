@@ -54,6 +54,7 @@ export default function EventDetails({
   const target = (siblings ?? []).find((e) => e.event_id === targetId) ?? null;
 
   const [confirm, setConfirm] = useState<ConfirmState>({ open: false });
+  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     setTargetId(null);
@@ -64,9 +65,11 @@ export default function EventDetails({
     (async () => {
       if (!open) return;
 
+      // who am I?
       const { data: userRes } = await supabase.auth.getUser();
       const me = userRes?.user?.id ?? null;
 
+      // base assignment (mine, on this selected/base date)
       if (me) {
         const { data: baseAsg } = await supabase
           .from('assignments')
@@ -81,12 +84,14 @@ export default function EventDetails({
         setBaseAssignmentId(null);
       }
 
+      // if no series, nothing to show
       if (!selected.template_id) {
         if (!mounted) return;
         setSiblings([]);
         return;
       }
 
+      // other dates in series (exclude base)
       const nowIso = new Date().toISOString();
       const { data: evRows, error: evErr } = await supabase
         .from('events')
@@ -94,6 +99,7 @@ export default function EventDetails({
         .eq('template_id', selected.template_id)
         .gte('starts_at', nowIso)
         .order('starts_at', { ascending: true });
+
       if (!mounted) return;
 
       if (evErr) {
@@ -116,6 +122,7 @@ export default function EventDetails({
         return;
       }
 
+      // earliest assignment per sibling event
       const evIds = baseFiltered.map((r) => r.event_id);
       const { data: asgRows } = await supabase
         .from('assignments')
@@ -133,6 +140,7 @@ export default function EventDetails({
         }
       }
 
+      // name lookup
       let profilesByUser: Record<string, string> = {};
       if (userSet.size > 0) {
         const { data: profRows } = await supabase
@@ -152,6 +160,7 @@ export default function EventDetails({
             ...ev,
             assignment_id: first.id,
             assignee_name: name,
+            // FIX: mark as mine when earliest assignee is me
             is_mine: me ? first.user_id === me : false,
           };
         } else {
@@ -164,7 +173,6 @@ export default function EventDetails({
         }
       });
 
-      if (!mounted) return;
       setSiblings(out);
     })();
 
@@ -180,6 +188,7 @@ export default function EventDetails({
     supabase,
   ]);
 
+  // formatting helpers
   const fmtTimeRange = (sIso: string, eIso: string) => {
     const s = new Date(sIso);
     const e = new Date(eIso);
@@ -195,12 +204,12 @@ export default function EventDetails({
 
   const fmtDayBadge = (iso: string) => {
     const d = new Date(iso);
-    const dow = d.toLocaleDateString(undefined, { month: 'short' });
+    const mon = d.toLocaleString(undefined, { month: 'short' });
     const day = d.getDate().toString().padStart(2, '0');
-    return { dow, day };
+    return { mon, day };
   };
 
-  // ---- actions (with confirms) ----
+  // actions
   const runCantMakeIt = async () => {
     try {
       const { data: userRes } = await supabase.auth.getUser();
@@ -222,21 +231,29 @@ export default function EventDetails({
   };
 
   const runProposeSwap = async () => {
-    if (!target) return;
-    // Still a stub until you confirm RPC endpoint (will replace with real call).
-    alert(
-      'Propose swap sent for:\n' +
-        `${fmtTimeRange(selected.starts_at, selected.ends_at)}  ↔  ${fmtTimeRange(
-          target.starts_at,
-          target.ends_at
-        )}\n\n(We will wire this to your swap RPC next.)`
-    );
+    if (!target || !baseAssignmentId || !target.assignment_id) return;
+    try {
+      setPending(true);
+      const { error } = await supabase.rpc('propose_cross_date_swap', {
+        p_from_assignment_id: baseAssignmentId,
+        p_to_assignment_id: target.assignment_id,
+        p_message: 'Swap via web',
+      });
+      if (error) throw error;
+      alert('Swap request sent. They will be notified to accept or decline.');
+      setConfirm({ open: false });
+    } catch (e: any) {
+      alert(`Could not propose swap: ${e?.message ?? 'Please try again.'}`);
+    } finally {
+      setPending(false);
+    }
   };
 
+  // Don’t allow proposing against unassigned OR my own sibling assignment
   const proposeEnabled =
     !!baseAssignmentId &&
     !!target &&
-    target.assignment_id !== null &&
+    !!target.assignment_id &&
     target.assignee_name !== 'Unassigned' &&
     !target.is_mine;
 
@@ -249,13 +266,13 @@ export default function EventDetails({
 
       {/* Drawer */}
       <div className="absolute right-0 top-0 h-full w-full max-w-[520px] bg-white shadow p-5 overflow-y-auto">
-        {/* Actions card with date badge */}
+        {/* Actions card */}
         <div className="border border-[#ececec] rounded-[14px] p-3 bg-white shadow-sm">
           <div className="flex items-center gap-3">
             {/* date badge */}
             <div className="w-[44px] rounded-[10px] border-2 border-[#1C94B3] bg-white flex flex-col items-center py-1.5">
               <div className="text-[12px] font-bold text-[#1C94B3] leading-none">
-                {fmtDayBadge(selected.starts_at).dow}
+                {fmtDayBadge(selected.starts_at).mon}
               </div>
               <div className="text-[18px] font-extrabold text-[#111] leading-none">
                 {fmtDayBadge(selected.starts_at).day}
@@ -278,29 +295,26 @@ export default function EventDetails({
           {/* actions */}
           <div className="h-2" />
           <div className="flex gap-2">
-            {/* Filled neutral */}
             <button
-              className="py-2 px-3 rounded-[12px] border border-[#ececec] bg-[#eef1f5] font-extrabold text-[12px] text-[#111] transition active:translate-y-[1px] active:shadow-none hover:bg-[#e9eef4] focus:outline-none focus:ring-2 focus:ring-[#cbd5e1]"
+              className="py-2 px-3 rounded-[12px] border border-[#ececec] bg-[#eef1f5] font-extrabold text-[12px] text-[#111] transition active:translate-y-[1px] hover:bg-[#e9eef4] focus:outline-none focus:ring-2 focus:ring-[#cbd5e1]"
               onClick={() => setConfirm({ open: true, kind: 'replacement' })}
-              aria-pressed={false}
+              disabled={pending}
               title="Open replacement request"
             >
               Can't make it
             </button>
 
-            {/* Outline neutral */}
             <button
               className={`py-2 px-3 rounded-[12px] border font-extrabold text-[12px] transition focus:outline-none ${
-                proposeEnabled
-                  ? 'border-[#d1d5db] bg-white text-[#111] hover:bg-[#f9fafb] active:translate-y-[1px] active:shadow-none focus:ring-2 focus:ring-[#cbd5e1]'
+                proposeEnabled && !pending
+                  ? 'border-[#d1d5db] bg-white text-[#111] hover:bg-[#f9fafb] active:translate-y-[1px] focus:ring-2 focus:ring-[#cbd5e1]'
                   : 'border-[#e5e7eb] bg-white text-[#9aa3af] cursor-not-allowed'
               }`}
-              onClick={() => proposeEnabled && setConfirm({ open: true, kind: 'swap' })}
-              disabled={!proposeEnabled}
-              aria-pressed={false}
+              onClick={() => proposeEnabled && !pending && setConfirm({ open: true, kind: 'swap' })}
+              disabled={!proposeEnabled || pending}
               title={proposeEnabled ? 'Propose swap' : 'Select a date below to enable'}
             >
-              {target ? 'Propose swap' : 'Select a date below'}
+              {pending ? 'Sending…' : target ? 'Propose swap' : 'Select a date below'}
             </button>
           </div>
         </div>
@@ -325,7 +339,7 @@ export default function EventDetails({
           <ul className="mt-2 space-y-2">
             {(siblings ?? []).map((s) => {
               const active = targetId === s.event_id;
-              const isDisabled = s.assignee_name === 'Unassigned' || s.is_mine;
+              const isDisabled = s.assignee_name === 'Unassigned' || s.is_mine; // FIX: block my own dates
               return (
                 <li key={s.event_id}>
                   <button
@@ -361,12 +375,12 @@ export default function EventDetails({
           </ul>
         )}
 
-        {/* Lightweight confirm modal (inline) */}
+        {/* Confirm modal */}
         {confirm.open && (
           <div className="absolute inset-0 flex items-center justify-center z-[60]">
             <div
               className="absolute inset-0 bg-black/30"
-              onClick={() => setConfirm({ open: false })}
+              onClick={() => !pending && setConfirm({ open: false })}
             />
             <div className="relative w-full max-w-[460px] bg-white rounded-[14px] border border-[#e6e7ea] shadow-lg p-4">
               <div className="text-[18px] font-bold text-[#111]">
@@ -400,31 +414,30 @@ export default function EventDetails({
 
               <div className="mt-4 flex justify-end gap-2">
                 <button
-                  className="py-2 px-3 rounded-[10px] border border-[#e5e7eb] bg-white text-[12px] font-bold hover:bg-[#fafafa] transition"
+                  className="py-2 px-3 rounded-[10px] border border-[#e5e7eb] bg-white text-[12px] font-bold hover:bg-[#fafafa] transition disabled:opacity-60"
                   onClick={() => setConfirm({ open: false })}
+                  disabled={pending}
                 >
                   Cancel
                 </button>
                 {confirm.kind === 'replacement' ? (
                   <button
-                    className="py-2 px-3 rounded-[10px] border border-[#1d4ed8] bg-[#1d4ed8] text-white text-[12px] font-bold hover:brightness-105 active:translate-y-[1px] transition"
+                    className="py-2 px-3 rounded-[10px] border border-[#1d4ed8] bg-[#1d4ed8] text-white text-[12px] font-bold hover:brightness-105 active:translate-y-[1px] transition disabled:opacity-60"
                     onClick={async () => {
                       setConfirm({ open: false });
                       await runCantMakeIt();
                     }}
+                    disabled={pending}
                   >
                     Confirm
                   </button>
                 ) : (
                   <button
                     className="py-2 px-3 rounded-[10px] border border-[#10b981] bg-[#10b981] text-white text-[12px] font-bold hover:brightness-105 active:translate-y-[1px] transition disabled:opacity-60"
-                    disabled={!proposeEnabled}
-                    onClick={async () => {
-                      setConfirm({ open: false });
-                      await runProposeSwap();
-                    }}
+                    onClick={runProposeSwap}
+                    disabled={!proposeEnabled || pending}
                   >
-                    Send request
+                    {pending ? 'Sending…' : 'Send request'}
                   </button>
                 )}
               </div>
