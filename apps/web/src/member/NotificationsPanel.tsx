@@ -83,6 +83,11 @@ export default function NotificationsPanel({ onClose }: { onClose?: () => void }
   const isReplacementOutcome = (n: NotificationRow) =>
     /^replacement_(claimed|filled)$/i.test(n.type);
 
+  // NEW: account invite
+  const isAccountInvite = (n: NotificationRow) => n.type === 'account_invited';
+  const getAccountId = (n: NotificationRow): string | null =>
+    ((n.data || {}) as any)?.account_id ?? null;
+
   // chips on read original request only
   const swapOutcomeChip = (n: NotificationRow) => {
     const isRead = n.status === 'read' || !!n.read_at;
@@ -98,6 +103,14 @@ export default function NotificationsPanel({ onClose }: { onClose?: () => void }
     const outcome = ((n.data || {}) as any)?.outcome;
     if (outcome === 'claim') return 'Claimed';
     if (outcome === 'ignore') return 'Ignored';
+    return null;
+  };
+  const inviteOutcomeChip = (n: NotificationRow) => {
+    const isRead = n.status === 'read' || !!n.read_at;
+    if (!isRead || !isAccountInvite(n)) return null;
+    const outcome = ((n.data || {}) as any)?.outcome;
+    if (outcome === 'accept') return 'Accepted';
+    if (outcome === 'decline') return 'Declined';
     return null;
   };
 
@@ -121,10 +134,11 @@ export default function NotificationsPanel({ onClose }: { onClose?: () => void }
     if (isReplacementRequest(n)) return 'Replacement Request';
     if (isReplacementOutcome(n))
       return n.type === 'replacement_claimed' ? 'Replacement Claimed' : 'Replacement Filled';
+    if (isAccountInvite(n)) return 'Account Invitation';
     return n.title;
   };
 
-  // ---------- actions (Accept / Decline) ----------
+  // ---------- actions ----------
   async function acceptSwap(n: NotificationRow) {
     const reqId = getSwapRequestId(n);
     if (!reqId) return;
@@ -133,7 +147,6 @@ export default function NotificationsPanel({ onClose }: { onClose?: () => void }
       const { error } = await supabase.rpc('accept_and_apply_swap', { p_swap_request_id: reqId });
       if (error) throw error;
 
-      // Persist outcome chip and mark read
       await supabase.rpc('mark_notification_outcome', { p_id: n.id, p_outcome: 'accept' });
       setItems((prev) =>
         prev.map((m) =>
@@ -165,7 +178,63 @@ export default function NotificationsPanel({ onClose }: { onClose?: () => void }
       });
       if (error) throw error;
 
-      // Persist outcome chip and mark read
+      await supabase.rpc('mark_notification_outcome', { p_id: n.id, p_outcome: 'decline' });
+      setItems((prev) =>
+        prev.map((m) =>
+          m.id === n.id
+            ? {
+                ...m,
+                status: 'read',
+                read_at: new Date().toISOString(),
+                data: { ...(m.data || {}), outcome: 'decline' },
+              }
+            : m
+        )
+      );
+    } catch (e: any) {
+      alert(`Failed: ${String(e?.message ?? e)}`);
+    } finally {
+      setWorkingId(null);
+    }
+  }
+
+  // NEW: account invite accept/decline
+  async function acceptAccountInvite(n: NotificationRow) {
+    const accountId = getAccountId(n);
+    if (!accountId) return alert('Missing account id');
+    try {
+      setWorkingId(n.id);
+      const { error } = await supabase.rpc('accept_account_invite', { p_account_id: accountId });
+      if (error) throw error;
+
+      await supabase.rpc('mark_notification_outcome', { p_id: n.id, p_outcome: 'accept' });
+      setItems((prev) =>
+        prev.map((m) =>
+          m.id === n.id
+            ? {
+                ...m,
+                status: 'read',
+                read_at: new Date().toISOString(),
+                data: { ...(m.data || {}), outcome: 'accept' },
+              }
+            : m
+        )
+      );
+    } catch (e: any) {
+      alert(`Failed: ${String(e?.message ?? e)}`);
+    } finally {
+      setWorkingId(null);
+    }
+  }
+
+  async function declineAccountInvite(n: NotificationRow) {
+    const accountId = getAccountId(n);
+    if (!accountId) return alert('Missing account id');
+    try {
+      setWorkingId(n.id);
+      const { error } = await supabase.rpc('decline_account_invite', { p_account_id: accountId });
+      if (error) throw error;
+
       await supabase.rpc('mark_notification_outcome', { p_id: n.id, p_outcome: 'decline' });
       setItems((prev) =>
         prev.map((m) =>
@@ -218,7 +287,7 @@ export default function NotificationsPanel({ onClose }: { onClose?: () => void }
               onClick={load}
               aria-label="Refresh notifications"
             >
-              ⟳
+              Γƒ│
             </button>
             <button
               className="sv-icon-btn"
@@ -226,7 +295,7 @@ export default function NotificationsPanel({ onClose }: { onClose?: () => void }
               aria-label="Close notifications"
               title="Close"
             >
-              ✕
+              Γ£ò
             </button>
           </div>
         </div>
@@ -248,7 +317,7 @@ export default function NotificationsPanel({ onClose }: { onClose?: () => void }
           <ul className="flex flex-col gap-2">
             {visibleItems.map((n) => {
               const isRead = n.status === 'read' || !!n.read_at;
-              const chip = swapOutcomeChip(n) || replacementOutcomeChip(n);
+              const chip = swapOutcomeChip(n) || replacementOutcomeChip(n) || inviteOutcomeChip(n);
               const text = outcomeText(n);
 
               return (
@@ -282,7 +351,7 @@ export default function NotificationsPanel({ onClose }: { onClose?: () => void }
                         </span>
                       )}
 
-                      {/* actions: swap request only, unread (mobile-style buttons) */}
+                      {/* actions: swap request */}
                       {!isRead && isSwapRequest(n) && (
                         <div className="flex flex-col gap-2 items-stretch">
                           <button
@@ -293,9 +362,7 @@ export default function NotificationsPanel({ onClose }: { onClose?: () => void }
                             className={[
                               'min-w-[96px] px-3 py-2 rounded-[10px] text-sm font-bold transition-colors',
                               'text-white bg-emerald-600 hover:bg-emerald-700',
-                              workingId === n.id
-                                ? 'opacity-60 cursor-not-allowed hover:bg-emerald-600'
-                                : '',
+                              workingId === n.id ? 'opacity-60 cursor-not-allowed' : '',
                             ].join(' ')}
                           >
                             {workingId === n.id ? 'Working…' : 'Accept'}
@@ -309,9 +376,40 @@ export default function NotificationsPanel({ onClose }: { onClose?: () => void }
                             className={[
                               'min-w-[96px] px-3 py-2 rounded-[10px] text-sm font-bold transition-colors',
                               'text-white bg-red-600 hover:bg-red-700',
-                              workingId === n.id
-                                ? 'opacity-60 cursor-not-allowed hover:bg-red-600'
-                                : '',
+                              workingId === n.id ? 'opacity-60 cursor-not-allowed' : '',
+                            ].join(' ')}
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      )}
+
+                      {/* NEW actions: account invitation */}
+                      {!isRead && isAccountInvite(n) && (
+                        <div className="flex flex-col gap-2 items-stretch">
+                          <button
+                            onClick={() => acceptAccountInvite(n)}
+                            disabled={workingId === n.id}
+                            aria-label="Accept account invite"
+                            title="Accept"
+                            className={[
+                              'min-w-[96px] px-3 py-2 rounded-[10px] text-sm font-bold transition-colors',
+                              'text-white bg-emerald-600 hover:bg-emerald-700',
+                              workingId === n.id ? 'opacity-60 cursor-not-allowed' : '',
+                            ].join(' ')}
+                          >
+                            {workingId === n.id ? 'Working…' : 'Accept'}
+                          </button>
+
+                          <button
+                            onClick={() => declineAccountInvite(n)}
+                            disabled={workingId === n.id}
+                            aria-label="Decline account invite"
+                            title="Decline"
+                            className={[
+                              'min-w-[96px] px-3 py-2 rounded-[10px] text-sm font-bold transition-colors',
+                              'text-white bg-red-600 hover:bg-red-700',
+                              workingId === n.id ? 'opacity-60 cursor-not-allowed' : '',
                             ].join(' ')}
                           >
                             Decline
@@ -320,7 +418,7 @@ export default function NotificationsPanel({ onClose }: { onClose?: () => void }
                       )}
 
                       {/* fallback mark read */}
-                      {!isRead && !isSwapRequest(n) && (
+                      {!isRead && !isSwapRequest(n) && !isAccountInvite(n) && (
                         <button
                           className="sv-btn"
                           onClick={() => markRead(n.id)}
