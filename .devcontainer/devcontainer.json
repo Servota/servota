@@ -1,6 +1,10 @@
 {
   "name": "servota-cloud-dev",
-  "image": "mcr.microsoft.com/devcontainers/universal:2-linux",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
   "postCreateCommand": "corepack enable && pnpm install",
   "customizations": {
     "vscode": {
@@ -15,5 +19,5 @@
       ]
     }
   },
-  "remoteUser": "vscode"
+  "remoteUser": "node"
 }
