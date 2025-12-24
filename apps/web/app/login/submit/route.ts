@@ -12,9 +12,24 @@ function getExternalOrigin(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const formData = await request.formData();
+  const email = String(formData.get('email'));
+  const password = String(formData.get('password'));
+
   const supabase = await createSupabaseServerClient();
-  await supabase.auth.signOut();
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
   const origin = getExternalOrigin(request);
-  return NextResponse.redirect(new URL('/login', origin));
+
+  if (error) {
+    return NextResponse.redirect(
+      new URL(`/login?error=${encodeURIComponent(error.message)}`, origin),
+    );
+  }
+
+  return NextResponse.redirect(new URL('/', origin));
 }
